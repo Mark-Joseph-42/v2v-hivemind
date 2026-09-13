@@ -26,6 +26,7 @@ class CameraController:
         self.current_agent_id: Optional[str] = None
         self.view_mode: str = "chase"  # "chase" (3D chase cam) or "bev" (top-down perception)
         self.last_switch_time: float = 0.0
+        self.last_toggle_time: float = 0.0
         self._registered_keys: bool = False
 
     def setup_panda3d_listeners(self, env: Any):
@@ -36,29 +37,76 @@ class CameraController:
         engine = getattr(env, "engine", None)
         if engine is not None and hasattr(engine, "accept"):
             try:
+                # Unbind MetaDrive base_env built-in keys that conflict with demo controls
+                # In particular: "p" paused the simulation (self.stop), and "b"/"q" manipulated camera
+                for conflicting_key in ("p", "P", "b", "B", "q", "Q", "[", "]"):
+                    try:
+                        engine.ignore(conflicting_key)
+                    except Exception:
+                        pass
+
+                # Agent cycling
                 engine.accept("arrow_left", self.previous_agent, [env])
                 engine.accept("arrow_right", self.next_agent, [env])
                 engine.accept("[", self.previous_agent, [env])
                 engine.accept("]", self.next_agent, [env])
-                # [P] key toggles between 3D Chase view and Top-Down Collaborative Perception
+
+                # [P] and [V] keys toggle between 3D Chase view and Top-Down BEV Perception
                 engine.accept("p", self.toggle_view_mode, [env])
                 engine.accept("P", self.toggle_view_mode, [env])
+                engine.accept("v", self.toggle_view_mode, [env])
+                engine.accept("V", self.toggle_view_mode, [env])
                 self._registered_keys = True
             except Exception:
                 pass
 
-    def toggle_view_mode(self, env: Any):
+    def toggle_view_mode(self, env: Any, force: bool = False):
         """Toggle between 3D Chase Camera and Top-Down Bird's-Eye-View (BEV)."""
+        now = time.time()
+        if not force and (now - self.last_toggle_time < 0.35):
+            return
+        self.last_toggle_time = now
+
+        # Ensure MetaDrive in_stop pause flag is never stuck
+        if hasattr(env, "in_stop"):
+            env.in_stop = False
+
         self.view_mode = "bev" if self.view_mode == "chase" else "chase"
         self._apply_tracking(env, self.get_focused_agent_id(env))
 
     def update_frame(self, env: Any):
-        """Per-step camera update to smoothly track vehicle in BEV mode."""
+        """Per-step camera update: hardware button polling and BEV position tracking."""
+        engine = getattr(env, "engine", None)
+        if engine is None:
+            return
+
+        # Safeguard: prevent MetaDrive from freezing if in_stop was somehow toggled
+        if getattr(env, "in_stop", False):
+            env.in_stop = False
+
+        # Direct hardware polling for P or V key press via Panda3D mouseWatcherNode
+        mwn = getattr(engine, "mouseWatcherNode", None)
+        if mwn is not None:
+            try:
+                from panda3d.core import KeyboardButton
+                is_p_down = (
+                    mwn.is_button_down(KeyboardButton.ascii_key(b"p")) or
+                    mwn.is_button_down(KeyboardButton.ascii_key(b"P")) or
+                    mwn.is_button_down(KeyboardButton.ascii_key(b"v")) or
+                    mwn.is_button_down(KeyboardButton.ascii_key(b"V"))
+                )
+                if is_p_down:
+                    now = time.time()
+                    if now - self.last_toggle_time > 0.40:
+                        self.toggle_view_mode(env)
+            except Exception:
+                pass
+
+        # If in BEV, position camera overhead looking directly down at focused CAV
         if self.view_mode == "bev":
-            engine = getattr(env, "engine", None)
             agents_dict = getattr(env, "agents", {})
             focused_veh = agents_dict.get(self.current_agent_id)
-            if engine is not None and getattr(engine, "main_camera", None) is not None and focused_veh is not None:
+            if getattr(engine, "main_camera", None) is not None and focused_veh is not None:
                 try:
                     pos = focused_veh.position
                     engine.main_camera.camera.setPos(pos[0], pos[1], 75.0)
@@ -145,15 +193,21 @@ class CameraController:
                     type(engine)._patched_track_getter = True
 
                 if getattr(engine, "main_camera", None) is not None:
+                    mc = engine.main_camera
                     if self.view_mode == "bev":
-                        # Overhead Top-Down BEV view
-                        engine.main_camera.stop_track()
+                        # Overhead Top-Down BEV view: cancel chase task and position camera
+                        if engine.task_manager.hasTaskNamed(mc.CHASE_TASK_NAME):
+                            engine.task_manager.remove(mc.CHASE_TASK_NAME)
+                        if engine.task_manager.hasTaskNamed(mc.TOP_DOWN_TASK_NAME):
+                            engine.task_manager.remove(mc.TOP_DOWN_TASK_NAME)
                         pos = target_vehicle.position
-                        engine.main_camera.camera.setPos(pos[0], pos[1], 75.0)
-                        engine.main_camera.camera.lookAt(pos[0], pos[1], 0.0)
+                        mc.camera.setPos(pos[0], pos[1], 75.0)
+                        mc.camera.lookAt(pos[0], pos[1], 0.0)
                     else:
-                        # 3D Chase Camera
-                        engine.main_camera.track(target_vehicle)
+                        # 3D Chase Camera: cancel top down and re-track target vehicle
+                        if engine.task_manager.hasTaskNamed(mc.TOP_DOWN_TASK_NAME):
+                            engine.task_manager.remove(mc.TOP_DOWN_TASK_NAME)
+                        mc.track(target_vehicle)
 
                 if hasattr(engine, "agent_manager") and hasattr(engine.agent_manager, "set_current_agent"):
                     engine.agent_manager.set_current_agent(agent_id)

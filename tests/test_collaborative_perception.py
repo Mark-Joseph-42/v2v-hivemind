@@ -81,8 +81,8 @@ def test_camera_controller_bev_toggle():
     assert cam.view_mode == "chase"
 
     mock_env = MagicMock()
-    cam.toggle_view_mode(mock_env)
+    cam.toggle_view_mode(mock_env, force=True)
     assert cam.view_mode == "bev"
 
-    cam.toggle_view_mode(mock_env)
+    cam.toggle_view_mode(mock_env, force=True)
     assert cam.view_mode == "chase"

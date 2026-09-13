@@ -46,27 +46,28 @@ class TelemetryHUD:
             from direct.gui.OnscreenText import OnscreenText
             from panda3d.core import TextNode
 
-            # Unified Multi-Panel Sidebar (Top-Right Vehicle Telemetry & Right-Side LiDAR Perception)
+            # Unified Multi-Panel Sidebar (Bottom-Right Vehicle Telemetry & LiDAR Perception)
             self._onscreen_text = OnscreenText(
                 text="INITIALIZING V2V & LIDAR TELEMETRY...",
                 pos=(self.config.sidebar_x, self.config.sidebar_top_y),
                 scale=self.config.font_size,
                 fg=self.config.normal_color,
+                bg=getattr(self.config, "card_bg_color", (0.02, 0.04, 0.08, 0.78)),
                 align=TextNode.ALeft,
                 mayChange=True,
-                shadow=(0, 0, 0, 0.85),
+                shadow=(0, 0, 0, 0.95),
                 shadowOffset=(0.04, 0.04)
             )
 
             # Bottom Controls & Status Banner
             self._bottom_banner = OnscreenText(
-                text="[Left/Right Arrow] Cycle Camera | [W/A/S/D] Drive | [Esc] Exit",
+                text="[Left/Right Arrow] Cycle Camera | [P / V] Toggle BEV View | [W/A/S/D] Drive | [Esc] Exit",
                 pos=(0.0, -0.95),
-                scale=0.042,
+                scale=0.040,
                 fg=(1.0, 0.9, 0.3, 1.0),
                 align=TextNode.ACenter,
                 mayChange=True,
-                shadow=(0, 0, 0, 0.9),
+                shadow=(0, 0, 0, 0.95),
                 shadowOffset=(0.04, 0.04)
             )
 
@@ -251,38 +252,31 @@ class TelemetryHUD:
         lidar = self._extract_lidar(env, focused_agent_id)
 
         # -------------------------------------------------------------
-        # 1. TOP-RIGHT: METADRIVE VEHICLE TELEMETRY
+        # 1. BOTTOM-RIGHT: CAV FLEET & VEHICLE TELEMETRY
         # -------------------------------------------------------------
-        view_tag = "BEV TOP-DOWN" if view_mode == "bev" else "3D CHASE"
+        view_tag = "BEV" if view_mode == "bev" else "3D"
         lines = [
-            "+-- METADRIVE VEHICLE TELEMETRY ----+",
-            f"| Tracking : {focused_name} ({mode.upper()}) [{view_tag}]",
-            f"| Speed    : {speed_kmh:5.1f} km/h",
-            f"| Heading  : {heading_deg:5.1f} deg | Lane: {lane}",
-            f"| Steering : {steer:+5.2f} rad | Throt: {throttle:+5.2f}",
+            "+-- CAV FLEET TELEMETRY ------------+",
+            f"| Focused  : {focused_name} ({mode.upper()}) [{view_tag}]",
+            f"| Speed    : {speed_kmh:5.1f} km/h | Lane: {lane}",
+            f"| Heading  : {heading_deg:5.1f} deg | Steer: {steer:+4.2f}",
             f"| V2V Mesh : {links} links | Lat: {avg_lat:4.1f}ms ({drop_pct:.1f}%)",
             "+-----------------------------------+",
         ]
 
         # -------------------------------------------------------------
-        # 2. RIGHT-SIDE: 360° LIDAR PERCEPTION SENSOR
+        # 2. 360° LIDAR PERCEPTION SENSOR
         # -------------------------------------------------------------
         obs_tag = f"{lidar['min_dist']:4.1f}m [{lidar['closest_sector']}]" if lidar['min_dist'] < 48.0 else "CLEAR (>48m)"
         lines.extend([
             "+-- 360 LIDAR PERCEPTION SENSOR ----+",
-            f"| Beams: {lidar['num_lasers']} Lasers | Max Range: 50.0m",
-            f"| Closest Hazard : {obs_tag}",
+            f"| Hazard : {obs_tag:18s} ({lidar['num_lasers']} Lasers)",
             f"| FRONT  : {self._format_bar(lidar['front'])}",
             f"| F-LEFT : {self._format_bar(lidar['front_left'])}",
             f"| F-RGHT : {self._format_bar(lidar['front_right'])}",
             f"| LEFT   : {self._format_bar(lidar['left'])}",
             f"| RIGHT  : {self._format_bar(lidar['right'])}",
             f"| REAR   : {self._format_bar(lidar['rear'])}",
-            "|          ^ FRONT: " + f"{lidar['front']:4.1f}m",
-            "|              |",
-            f"|  L:{lidar['left']:4.1f}m --+-- R:{lidar['right']:4.1f}m",
-            "|              |",
-            "|          v REAR : " + f"{lidar['rear']:4.1f}m",
             "+-----------------------------------+",
         ])
 
@@ -295,24 +289,22 @@ class TelemetryHUD:
             c_partner = collab_summary.get("revealing_partner", "NONE")
             collab_lines = [
                 "+-- V2V COLLABORATIVE PERCEPTION ---+",
-                f"| BLOS Status : ACTIVE [SHADOW UNMASKED]",
-                f"| Occluded Targets : {c_cnt} (via {c_partner})",
-                f"| Closest BLOS Obj : {c_dist:4.1f}m (IN SHADOW)",
-                f"| Marker Fill      : GREEN CONCENTRIC RINGS",
+                f"| BLOS Status : ACTIVE [UNMASKED]",
+                f"| Occluded    : {c_cnt} targets (via {c_partner})",
+                f"| Closest BLOS: {c_dist:4.1f}m [GREEN BEACON]",
                 "+-----------------------------------+",
             ]
         else:
             collab_lines = [
                 "+-- V2V COLLABORATIVE PERCEPTION ---+",
-                f"| BLOS Status : IDLE [ALL LINE-OF-SIGHT]",
-                f"| Shared CPMs : Receiving from Fleet",
-                f"| Marker Fill : Standby for Occlusions",
+                f"| BLOS Status : STANDBY (Receiving CPM)",
+                f"| Markers     : Ready for Blind-Spots",
                 "+-----------------------------------+",
             ]
         lines.extend(collab_lines)
 
         # -------------------------------------------------------------
-        # 3. LOWER-RIGHT: FLEET OVERVIEW
+        # 3. ACTIVE CAV FLEET STATUS
         # -------------------------------------------------------------
         lines.append("+-- ACTIVE CAV FLEET STATUS --------+")
         for aid in sorted(agents_dict.keys()):
@@ -322,7 +314,7 @@ class TelemetryHUD:
                 tag = " [HUMAN]"
             st = v2v_mesh.latest_states.get(aid)
             spd_str = f"{st.speed_kmh:4.0f}kph" if st else " --"
-            brk_str = " *BRAKE*" if (st and st.is_braking) else ""
+            brk_str = " *BRK*" if (st and st.is_braking) else ""
             lines.append(f"|  * {aname}{tag:8s} {spd_str}{brk_str}")
 
         lines.append("+-----------------------------------+")
@@ -333,11 +325,11 @@ class TelemetryHUD:
             banner_fg = (1.0, 0.2, 0.2, 1.0)
         elif collab_summary and collab_summary.get("active", False):
             c_partner = collab_summary.get("revealing_partner", "PEER")
-            banner_text = f"[+] V2V COLLABORATIVE PERCEPTION ACTIVE: Hidden obstacle revealed by {c_partner}! | [P] BEV View"
+            banner_text = f"[+] V2V COLLABORATIVE PERCEPTION ACTIVE: Hidden obstacle revealed by {c_partner}! | [P / V] Toggle View"
             banner_fg = (0.2, 1.0, 0.3, 1.0)
         else:
             view_label = "3D View" if view_mode == "bev" else "BEV View"
-            banner_text = f"[Left/Right Arrow] Cycle Focus | [P] {view_label} | Tracking: {focused_name} | Mode: {mode.upper()}"
+            banner_text = f"[◄ / ►] Cycle CAV | [P / V] Switch to {view_label} | Tracking: {focused_name} | Mode: {mode.upper()}"
             banner_fg = (0.2, 1.0, 0.4, 1.0)
 
         return "\n".join(lines), banner_text, banner_fg

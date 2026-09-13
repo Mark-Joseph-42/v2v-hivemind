@@ -56,13 +56,14 @@ class HUDConfig:
     """On-screen telemetry HUD layout configuration."""
     update_interval_s: float = 0.05      # 20 Hz update rate
     sidebar_x: float = 0.58              # Right side position (Panda3D aspect2d coords)
-    sidebar_top_y: float = 0.95          # Aligned to top-right
-    font_size: float = 0.030             # Scaled for multi-panel telemetry layout
+    sidebar_top_y: float = -0.06         # Aligned to BOTTOM-RIGHT (avoids MetaDrive top-right UI)
+    font_size: float = 0.026             # Compact, crisp multi-panel telemetry layout
     header_color: Tuple[float, float, float, float] = (0.3, 0.8, 1.0, 1.0)
     normal_color: Tuple[float, float, float, float] = (0.9, 0.9, 0.9, 1.0)
     highlight_color: Tuple[float, float, float, float] = (0.2, 1.0, 0.4, 1.0)
     warning_color: Tuple[float, float, float, float] = (1.0, 0.25, 0.25, 1.0)
     caution_color: Tuple[float, float, float, float] = (1.0, 0.85, 0.2, 1.0)
+    card_bg_color: Tuple[float, float, float, float] = (0.02, 0.04, 0.08, 0.78) # Semi-transparent dark card
 
 
 @dataclass

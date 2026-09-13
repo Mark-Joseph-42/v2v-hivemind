@@ -151,7 +151,7 @@ def main():
         initial_focus = cam_ctrl.get_focused_agent_id(env)
 
         print(f"{Colors.GREEN}[Ready]{Colors.ENDC} Live demo running! Press Left/Right arrow keys to cycle camera.")
-        print(f"{Colors.CYAN}[Controls]{Colors.ENDC} Press [P] to toggle 3D Chase Cam <--> Overhead BEV Perception View.")
+        print(f"{Colors.CYAN}[Controls]{Colors.ENDC} Press [P] or [V] to toggle 3D Chase Cam <--> Overhead BEV Perception View.")
         if args.mode == "human":
             print(f"{Colors.YELLOW}[Interactive]{Colors.ENDC} Use W/A/S/D to drive CAV_01. Slam 'S' to broadcast emergency brake!")
 
@@ -161,6 +161,10 @@ def main():
 
         while running:
             step += 1
+
+            # Safeguard against MetaDrive built-in pause toggle
+            if getattr(env, "in_stop", False):
+                env.in_stop = False
 
             # A. Retrieve active agents
             agents = get_active_agents_dict(env)
