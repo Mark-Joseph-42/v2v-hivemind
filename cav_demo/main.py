@@ -52,6 +52,13 @@ def parse_args():
         help="Number of CAV agents in the simulation (default: 4)"
     )
     parser.add_argument(
+        "--scenario",
+        type=str,
+        choices=["corridor", "roundabout", "intersection", "bottleneck", "tollgate", "parking"],
+        default="corridor",
+        help="Multi-Agent traffic environment scenario: 'corridor' (default highway), 'roundabout', 'intersection', 'bottleneck', 'tollgate', or 'parking'"
+    )
+    parser.add_argument(
         "--map",
         type=int,
         default=5,
@@ -67,6 +74,11 @@ def parse_args():
         "--headless",
         action="store_true",
         help="Run without 3D window (for automated testing and benchmarking)"
+    )
+    parser.add_argument(
+        "--hide-lidar",
+        action="store_true",
+        help="Hide real-time 3D laser scan rays in viewport"
     )
     parser.add_argument(
         "--disable-coop",
@@ -97,9 +109,11 @@ def main():
     sim_cfg = SimulationConfig(
         num_agents=args.agents,
         map_blocks=args.map,
+        scenario=args.scenario,
         traffic_density=args.traffic,
         use_render=not args.headless,
-        manual_control=(args.mode == "human")
+        manual_control=(args.mode == "human"),
+        show_lidar=not args.hide_lidar
     )
     v2v_cfg = V2VConfig()
     cam_cfg = CameraConfig()

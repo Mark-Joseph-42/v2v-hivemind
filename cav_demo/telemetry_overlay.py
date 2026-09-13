@@ -10,6 +10,8 @@ displaying live kinematic readings, V2V packet transfers, and emergency alerts.
 import math
 import time
 from typing import Any, Dict, List, Optional
+import numpy as np
+
 from cav_demo.config import HUDConfig
 from cav_demo.v2v_network import V2VNetworkMesh, V2VPacket
 from cav_demo.utils import format_agent_name, rad_to_deg, mps_to_kmh
@@ -18,6 +20,10 @@ from cav_demo.utils import format_agent_name, rad_to_deg, mps_to_kmh
 class TelemetryHUD:
     """
     On-screen dashboard overlay for Panda3D rendering window.
+    Organized into:
+    - Top Right: MetaDrive Vehicle Telemetry (Speed, Heading, Lane, Steer, Throttle, V2V mesh)
+    - Right Side: 360° LiDAR Perception Sensor (72 laser rays, sector clearances, radar compass)
+    - Lower Right: Fleet Status overview
     """
 
     def __init__(self, config: Optional[HUDConfig] = None):
@@ -40,15 +46,15 @@ class TelemetryHUD:
             from direct.gui.OnscreenText import OnscreenText
             from panda3d.core import TextNode
 
-            # Sidebar Text Node (Right side of screen)
+            # Unified Multi-Panel Sidebar (Top-Right Vehicle Telemetry & Right-Side LiDAR Perception)
             self._onscreen_text = OnscreenText(
-                text="INITIALIZING V2V TELEMETRY...",
+                text="INITIALIZING V2V & LIDAR TELEMETRY...",
                 pos=(self.config.sidebar_x, self.config.sidebar_top_y),
                 scale=self.config.font_size,
                 fg=self.config.normal_color,
                 align=TextNode.ALeft,
                 mayChange=True,
-                shadow=(0, 0, 0, 0.8),
+                shadow=(0, 0, 0, 0.85),
                 shadowOffset=(0.04, 0.04)
             )
 
@@ -65,8 +71,7 @@ class TelemetryHUD:
             )
 
             self._initialized = True
-        except Exception as e:
-            # Fallback if running headless or Panda3D GUI unavailable
+        except Exception:
             self._initialized = False
 
     def update(
@@ -79,7 +84,7 @@ class TelemetryHUD:
         is_coop_braking: bool = False
     ):
         """
-        Update the on-screen telemetry feed with the latest vehicle states and V2V packets.
+        Update the on-screen telemetry feed with the latest vehicle states, LiDAR rays, and V2V packets.
         """
         now = time.time()
         if now - self.last_update_time < self.config.update_interval_s:
@@ -89,7 +94,6 @@ class TelemetryHUD:
         if not self._initialized:
             self.init_hud(env)
 
-        # 1. Format the telemetry string
         text_content, banner_content, banner_fg = self._generate_hud_strings(
             env=env,
             focused_agent_id=focused_agent_id,
@@ -99,7 +103,6 @@ class TelemetryHUD:
             is_coop_braking=is_coop_braking
         )
 
-        # 2. Update Panda3D text nodes if active
         if self._onscreen_text is not None:
             try:
                 self._onscreen_text.setText(text_content)
@@ -113,6 +116,86 @@ class TelemetryHUD:
             except Exception:
                 pass
 
+    def _extract_lidar(self, env: Any, agent_id: str) -> Dict[str, Any]:
+        """Extract 360-degree LiDAR cloud points and compute sector clearances."""
+        max_dist = 50.0
+        try:
+            if hasattr(env, "agent_manager") and hasattr(env.agent_manager, "get_observations"):
+                obs_dict = env.agent_manager.get_observations()
+                obs_obj = obs_dict.get(agent_id)
+                if obs_obj is not None and hasattr(obs_obj, "cloud_points") and obs_obj.cloud_points is not None:
+                    pts = np.array(obs_obj.cloud_points, dtype=float)
+                    num_pts = len(pts)
+                    if num_pts > 0:
+                        dists = pts * max_dist
+                        
+                        f_idx = np.concatenate([np.arange(0, 4), np.arange(num_pts - 4, num_pts)])
+                        fr_idx = np.arange(4, 15)
+                        r_idx = np.arange(15, 22)
+                        rear_idx = np.arange(32, 41)
+                        l_idx = np.arange(51, 58)
+                        fl_idx = np.arange(58, num_pts - 4)
+
+                        f_dist = float(np.min(dists[f_idx]))
+                        fr_dist = float(np.min(dists[fr_idx]))
+                        r_dist = float(np.min(dists[r_idx]))
+                        rear_dist = float(np.min(dists[rear_idx]))
+                        l_dist = float(np.min(dists[l_idx]))
+                        fl_dist = float(np.min(dists[fl_idx]))
+                        min_dist = float(np.min(dists))
+
+                        sector_map = [
+                            ("FRONT", f_dist),
+                            ("F-RIGHT", fr_dist),
+                            ("RIGHT", r_dist),
+                            ("REAR", rear_dist),
+                            ("LEFT", l_dist),
+                            ("F-LEFT", fl_dist)
+                        ]
+                        closest_name = min(sector_map, key=lambda x: x[1])[0]
+
+                        return {
+                            "active": True,
+                            "min_dist": min_dist,
+                            "closest_sector": closest_name,
+                            "front": f_dist,
+                            "front_left": fl_dist,
+                            "front_right": fr_dist,
+                            "left": l_dist,
+                            "right": r_dist,
+                            "rear": rear_dist,
+                            "num_lasers": num_pts
+                        }
+        except Exception:
+            pass
+
+        return {
+            "active": False,
+            "min_dist": max_dist,
+            "closest_sector": "CLEAR",
+            "front": max_dist,
+            "front_left": max_dist,
+            "front_right": max_dist,
+            "left": max_dist,
+            "right": max_dist,
+            "rear": max_dist,
+            "num_lasers": 72
+        }
+
+    @staticmethod
+    def _format_bar(dist: float, max_range: float = 50.0, width: int = 8) -> str:
+        """Create a visual clearance bar with distance and status label."""
+        ratio = min(1.0, max(0.0, dist / max_range))
+        filled = int(round(ratio * width))
+        bar = "=" * filled + " " * (width - filled)
+        if dist > 25.0:
+            status = "CLEAR"
+        elif dist > 12.0:
+            status = "WARN "
+        else:
+            status = "ALERT"
+        return f"[{bar}] {dist:4.1f}m {status}"
+
     def _generate_hud_strings(
         self,
         env: Any,
@@ -122,7 +205,7 @@ class TelemetryHUD:
         mode: str,
         is_coop_braking: bool
     ) -> (str, str, tuple):
-        """Construct formatted telemetry text blocks."""
+        """Construct formatted multi-panel telemetry and LiDAR text."""
         focused_name = format_agent_name(focused_agent_id)
         agents_dict = getattr(env, "agents", {})
         veh = agents_dict.get(focused_agent_id)
@@ -158,45 +241,48 @@ class TelemetryHUD:
         # Warnings
         warnings = v2v_mesh.get_emergency_brake_warnings(focused_agent_id)
 
-        # Build Sidebar Dashboard Text
+        # Extract LiDAR readings for focused vehicle
+        lidar = self._extract_lidar(env, focused_agent_id)
+
+        # -------------------------------------------------------------
+        # 1. TOP-RIGHT: METADRIVE VEHICLE TELEMETRY
+        # -------------------------------------------------------------
         lines = [
+            "+-- METADRIVE VEHICLE TELEMETRY ----+",
+            f"| Tracking : {focused_name} ({mode.upper()})",
+            f"| Speed    : {speed_kmh:5.1f} km/h",
+            f"| Heading  : {heading_deg:5.1f} deg | Lane: {lane}",
+            f"| Steering : {steer:+5.2f} rad | Throt: {throttle:+5.2f}",
+            f"| V2V Mesh : {links} links | Lat: {avg_lat:4.1f}ms ({drop_pct:.1f}%)",
             "+-----------------------------------+",
-            "|    FLEET TELEMETRY DASHBOARD      |",
-            "|   RSET Final Year B.Tech CAV Demo |",
-            "+-----------------------------------+",
-            f"| Active View:  {focused_name} ({mode.upper()})",
-            "| ---------------------------------",
-            f"| Speed       : {speed_kmh:5.1f} km/h",
-            f"| Heading     : {heading_deg:5.1f} deg",
-            f"| Steering    : {steer:+5.2f} rad",
-            f"| Throttle    : {throttle:+5.2f}",
-            f"| Lane Index  : {lane}",
-            "+-----------------------------------+",
-            "|    V2V WIRELESS MESH STATUS       |",
-            "+-----------------------------------+",
-            f"| Active Links: {links} connected",
-            f"| Avg Latency : {avg_lat:4.1f} ms",
-            f"| Packet Loss : {drop_pct:4.1f} %",
-            "| ---------------------------------",
-            "| INCOMING V2V TELEMETRY STREAM:    "
         ]
 
-        # Show incoming packets from neighbors
-        rx_packets = v2v_mesh.received_packets.get(focused_agent_id, [])
-        if rx_packets:
-            seen_senders = set()
-            count = 0
-            for pkt in rx_packets:
-                if pkt.sender_id not in seen_senders and count < 4:
-                    seen_senders.add(pkt.sender_id)
-                    count += 1
-                    status_flag = " [BRAKE!]" if pkt.is_braking else ""
-                    lines.append(f"| [{pkt.sender_display}] {pkt.speed_kmh:4.1f}kph {pkt.latency_ms:3.0f}ms{status_flag}")
-        else:
-            lines.append("| (Listening for neighbor broadcasts...)")
+        # -------------------------------------------------------------
+        # 2. RIGHT-SIDE: 360° LIDAR PERCEPTION SENSOR
+        # -------------------------------------------------------------
+        obs_tag = f"{lidar['min_dist']:4.1f}m [{lidar['closest_sector']}]" if lidar['min_dist'] < 48.0 else "CLEAR (>48m)"
+        lines.extend([
+            "+-- 360 LIDAR PERCEPTION SENSOR ----+",
+            f"| Beams: {lidar['num_lasers']} Lasers | Max Range: 50.0m",
+            f"| Closest Hazard : {obs_tag}",
+            f"| FRONT  : {self._format_bar(lidar['front'])}",
+            f"| F-LEFT : {self._format_bar(lidar['front_left'])}",
+            f"| F-RGHT : {self._format_bar(lidar['front_right'])}",
+            f"| LEFT   : {self._format_bar(lidar['left'])}",
+            f"| RIGHT  : {self._format_bar(lidar['right'])}",
+            f"| REAR   : {self._format_bar(lidar['rear'])}",
+            "|          ^ FRONT: " + f"{lidar['front']:4.1f}m",
+            "|              |",
+            f"|  L:{lidar['left']:4.1f}m --+-- R:{lidar['right']:4.1f}m",
+            "|              |",
+            "|          v REAR : " + f"{lidar['rear']:4.1f}m",
+            "+-----------------------------------+",
+        ])
 
-        lines.append("+-----------------------------------+")
-        lines.append("| FLEET STATUS:                     ")
+        # -------------------------------------------------------------
+        # 3. LOWER-RIGHT: FLEET OVERVIEW
+        # -------------------------------------------------------------
+        lines.append("+-- ACTIVE CAV FLEET STATUS --------+")
         for aid in sorted(agents_dict.keys()):
             aname = format_agent_name(aid)
             tag = " [FOCUS]" if aid == focused_agent_id else " [AUTO]"

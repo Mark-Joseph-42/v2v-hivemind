@@ -13,6 +13,7 @@ class SimulationConfig:
     """Core simulator configuration settings."""
     num_agents: int = 4
     map_blocks: int = 5
+    scenario: str = "corridor"           # "corridor", "roundabout", "intersection", "bottleneck", "tollgate"
     traffic_density: float = 0.08
     allow_respawn: bool = False
     crash_done: bool = False
@@ -23,6 +24,9 @@ class SimulationConfig:
     physics_world_step_size: float = 0.02
     use_render: bool = True
     manual_control: bool = False
+    show_lidar: bool = True              # Draw real 3D laser beams in the viewport
+    lidar_num_lasers: int = 72           # 360-degree laser count
+    lidar_distance: float = 50.0         # LiDAR maximum detection range in meters
     window_size: Tuple[int, int] = (1280, 720)
 
 
@@ -51,9 +55,9 @@ class CameraConfig:
 class HUDConfig:
     """On-screen telemetry HUD layout configuration."""
     update_interval_s: float = 0.05      # 20 Hz update rate
-    sidebar_x: float = 0.65              # Right side position (Panda3D aspect2d coords)
-    sidebar_top_y: float = 0.92
-    font_size: float = 0.036
+    sidebar_x: float = 0.58              # Right side position (Panda3D aspect2d coords)
+    sidebar_top_y: float = 0.95          # Aligned to top-right
+    font_size: float = 0.030             # Scaled for multi-panel telemetry layout
     header_color: Tuple[float, float, float, float] = (0.3, 0.8, 1.0, 1.0)
     normal_color: Tuple[float, float, float, float] = (0.9, 0.9, 0.9, 1.0)
     highlight_color: Tuple[float, float, float, float] = (0.2, 1.0, 0.4, 1.0)

@@ -45,33 +45,43 @@ echo "=================================================================="
 echo ""
 echo "Select Demonstration Mode for the Evaluation Panel:"
 echo ""
-echo "  [1] FLEET MODE (Autonomous Fleet + Arrow-Key 3D Camera Switching)"
-echo "  [2] HUMAN MODE (Drive Agent_0 with W/A/S/D + Live Fleet Defense)"
-echo "  [3] ABLATION DEMO (Fleet Mode WITHOUT V2V Cooperative Braking)"
-echo "  [4] HEADLESS VERIFICATION TEST (Automated 100-step smoke test)"
-echo "  [5] RUN UNIT TESTS (Pytest for V2V networking & packet integrity)"
+echo "  [1] FLEET MODE - Highway Corridor (Arrow-Key Camera + 3D LiDAR)"
+echo "  [2] HUMAN MODE - Interactive W/A/S/D Driving + Fleet Defense"
+echo "  [3] SCENARIO   - Multi-Lane Roundabout Coordination"
+echo "  [4] SCENARIO   - 4-Way Cross Intersection Navigation"
+echo "  [5] ABLATION   - Fleet Mode WITHOUT V2V Cooperative Defense"
+echo "  [6] HEADLESS   - Automated Verification Test (100 steps)"
+echo "  [7] TESTS      - Run Pytest Unit Test Suite"
 echo "  [q] Quit"
 echo ""
-read -p "Enter choice [1-5 or q]: " choice
+read -p "Enter choice [1-7 or q]: " choice
 
 case "$choice" in
     1)
-        echo "Launching Fleet Observation Mode..."
-        exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --agents 4 --map 5
+        echo "Launching Fleet Observation Mode (Highway Corridor)..."
+        exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --scenario corridor --agents 4 --map 5
         ;;
     2)
         echo "Launching Human-in-the-Loop Interactive Mode..."
-        exec "$PYTHON_EXEC" cav_demo/main.py --mode human --agents 4 --map 5
+        exec "$PYTHON_EXEC" cav_demo/main.py --mode human --scenario corridor --agents 4 --map 5
         ;;
     3)
-        echo "Launching Fleet Mode WITHOUT V2V cooperative defense..."
-        exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --agents 4 --map 5 --disable-coop
+        echo "Launching Multi-Lane Roundabout Coordination Scenario..."
+        exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --scenario roundabout --agents 4
         ;;
     4)
+        echo "Launching 4-Way Cross Intersection Scenario..."
+        exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --scenario intersection --agents 4
+        ;;
+    5)
+        echo "Launching Fleet Mode WITHOUT V2V cooperative defense..."
+        exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --scenario corridor --agents 4 --map 5 --disable-coop
+        ;;
+    6)
         echo "Running Headless Verification Test (100 steps)..."
         exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --agents 4 --headless --max-steps 100
         ;;
-    5)
+    7)
         echo "Running Unit Tests..."
         exec "$PYTHON_EXEC" -m pytest tests/ -v
         ;;
