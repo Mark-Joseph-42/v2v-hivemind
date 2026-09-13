@@ -9,7 +9,7 @@ displaying live kinematic readings, V2V packet transfers, and emergency alerts.
 
 import math
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from cav_demo.config import HUDConfig
@@ -81,7 +81,9 @@ class TelemetryHUD:
         v2v_mesh: V2VNetworkMesh,
         actions_dict: Optional[Dict[str, Any]] = None,
         mode: str = "fleet",
-        is_coop_braking: bool = False
+        is_coop_braking: bool = False,
+        collab_summary: Optional[Dict[str, Any]] = None,
+        view_mode: str = "chase"
     ):
         """
         Update the on-screen telemetry feed with the latest vehicle states, LiDAR rays, and V2V packets.
@@ -100,7 +102,9 @@ class TelemetryHUD:
             v2v_mesh=v2v_mesh,
             actions_dict=actions_dict,
             mode=mode,
-            is_coop_braking=is_coop_braking
+            is_coop_braking=is_coop_braking,
+            collab_summary=collab_summary,
+            view_mode=view_mode
         )
 
         if self._onscreen_text is not None:
@@ -203,8 +207,10 @@ class TelemetryHUD:
         v2v_mesh: V2VNetworkMesh,
         actions_dict: Optional[Dict[str, Any]],
         mode: str,
-        is_coop_braking: bool
-    ) -> (str, str, tuple):
+        is_coop_braking: bool,
+        collab_summary: Optional[Dict[str, Any]] = None,
+        view_mode: str = "chase"
+    ) -> Tuple[str, str, tuple]:
         """Construct formatted multi-panel telemetry and LiDAR text."""
         focused_name = format_agent_name(focused_agent_id)
         agents_dict = getattr(env, "agents", {})
@@ -247,9 +253,10 @@ class TelemetryHUD:
         # -------------------------------------------------------------
         # 1. TOP-RIGHT: METADRIVE VEHICLE TELEMETRY
         # -------------------------------------------------------------
+        view_tag = "BEV TOP-DOWN" if view_mode == "bev" else "3D CHASE"
         lines = [
             "+-- METADRIVE VEHICLE TELEMETRY ----+",
-            f"| Tracking : {focused_name} ({mode.upper()})",
+            f"| Tracking : {focused_name} ({mode.upper()}) [{view_tag}]",
             f"| Speed    : {speed_kmh:5.1f} km/h",
             f"| Heading  : {heading_deg:5.1f} deg | Lane: {lane}",
             f"| Steering : {steer:+5.2f} rad | Throt: {throttle:+5.2f}",
@@ -280,6 +287,31 @@ class TelemetryHUD:
         ])
 
         # -------------------------------------------------------------
+        # 2b. V2V COLLABORATIVE PERCEPTION (BLOS AUGMENTATION)
+        # -------------------------------------------------------------
+        if collab_summary and collab_summary.get("active", False):
+            c_cnt = collab_summary.get("resolved_count", 0)
+            c_dist = collab_summary.get("closest_dist", 50.0)
+            c_partner = collab_summary.get("revealing_partner", "NONE")
+            collab_lines = [
+                "+-- V2V COLLABORATIVE PERCEPTION ---+",
+                f"| BLOS Status : ACTIVE [SHADOW UNMASKED]",
+                f"| Occluded Targets : {c_cnt} (via {c_partner})",
+                f"| Closest BLOS Obj : {c_dist:4.1f}m (IN SHADOW)",
+                f"| Marker Fill      : GREEN CONCENTRIC RINGS",
+                "+-----------------------------------+",
+            ]
+        else:
+            collab_lines = [
+                "+-- V2V COLLABORATIVE PERCEPTION ---+",
+                f"| BLOS Status : IDLE [ALL LINE-OF-SIGHT]",
+                f"| Shared CPMs : Receiving from Fleet",
+                f"| Marker Fill : Standby for Occlusions",
+                "+-----------------------------------+",
+            ]
+        lines.extend(collab_lines)
+
+        # -------------------------------------------------------------
         # 3. LOWER-RIGHT: FLEET OVERVIEW
         # -------------------------------------------------------------
         lines.append("+-- ACTIVE CAV FLEET STATUS --------+")
@@ -299,8 +331,13 @@ class TelemetryHUD:
         if is_coop_braking or warnings:
             banner_text = f"[!] V2V COLLISION AVOIDANCE ACTIVE: Emergency brake signal received! [Tracking: {focused_name}]"
             banner_fg = (1.0, 0.2, 0.2, 1.0)
+        elif collab_summary and collab_summary.get("active", False):
+            c_partner = collab_summary.get("revealing_partner", "PEER")
+            banner_text = f"[+] V2V COLLABORATIVE PERCEPTION ACTIVE: Hidden obstacle revealed by {c_partner}! | [P] BEV View"
+            banner_fg = (0.2, 1.0, 0.3, 1.0)
         else:
-            banner_text = f"[Left/Right Arrow] Cycle Focus | Tracking: {focused_name} | Mode: {mode.upper()}"
+            view_label = "3D View" if view_mode == "bev" else "BEV View"
+            banner_text = f"[Left/Right Arrow] Cycle Focus | [P] {view_label} | Tracking: {focused_name} | Mode: {mode.upper()}"
             banner_fg = (0.2, 1.0, 0.4, 1.0)
 
         return "\n".join(lines), banner_text, banner_fg

@@ -16,11 +16,15 @@ from cav_demo.utils import format_agent_name
 class CameraController:
     """
     Manages 3D camera tracking across multi-agent CAV fleet in MetaDrive.
+    Supports:
+    - Interactive agent cycling with LEFT / RIGHT arrow keys
+    - Toggle between 3D Chase Camera and Top-Down BEV Perception Mode with [P] key
     """
 
     def __init__(self, config: Optional[CameraConfig] = None):
         self.config = config or CameraConfig()
         self.current_agent_id: Optional[str] = None
+        self.view_mode: str = "chase"  # "chase" (3D chase cam) or "bev" (top-down perception)
         self.last_switch_time: float = 0.0
         self._registered_keys: bool = False
 
@@ -36,10 +40,31 @@ class CameraController:
                 engine.accept("arrow_right", self.next_agent, [env])
                 engine.accept("[", self.previous_agent, [env])
                 engine.accept("]", self.next_agent, [env])
+                # [P] key toggles between 3D Chase view and Top-Down Collaborative Perception
+                engine.accept("p", self.toggle_view_mode, [env])
+                engine.accept("P", self.toggle_view_mode, [env])
                 self._registered_keys = True
-            except Exception as e:
-                # If engine is headless or event manager not ready
+            except Exception:
                 pass
+
+    def toggle_view_mode(self, env: Any):
+        """Toggle between 3D Chase Camera and Top-Down Bird's-Eye-View (BEV)."""
+        self.view_mode = "bev" if self.view_mode == "chase" else "chase"
+        self._apply_tracking(env, self.get_focused_agent_id(env))
+
+    def update_frame(self, env: Any):
+        """Per-step camera update to smoothly track vehicle in BEV mode."""
+        if self.view_mode == "bev":
+            engine = getattr(env, "engine", None)
+            agents_dict = getattr(env, "agents", {})
+            focused_veh = agents_dict.get(self.current_agent_id)
+            if engine is not None and getattr(engine, "main_camera", None) is not None and focused_veh is not None:
+                try:
+                    pos = focused_veh.position
+                    engine.main_camera.camera.setPos(pos[0], pos[1], 75.0)
+                    engine.main_camera.camera.lookAt(pos[0], pos[1], 0.0)
+                except Exception:
+                    pass
 
     def get_focused_agent_id(self, env: Any) -> str:
         """Return the currently focused agent ID."""
@@ -96,7 +121,7 @@ class CameraController:
         self._apply_tracking(env, self.current_agent_id)
 
     def _apply_tracking(self, env: Any, agent_id: str):
-        """Instruct MetaDrive's 3D engine to track the specified vehicle."""
+        """Instruct MetaDrive's 3D engine to track the specified vehicle in Chase or BEV mode."""
         engine = getattr(env, "engine", None)
         agents_dict = getattr(env, "agents", None)
 
@@ -109,7 +134,6 @@ class CameraController:
             if hasattr(env, "current_track_agent"):
                 env.current_track_agent = target_vehicle
             if engine is not None:
-                # Patch property fallback on engine if needed
                 engine._custom_target_vehicle = target_vehicle
                 if not hasattr(type(engine), "_patched_track_getter"):
                     orig_fget = type(engine).current_track_agent.fget
@@ -120,9 +144,16 @@ class CameraController:
                     type(engine).current_track_agent = property(safe_track_getter)
                     type(engine)._patched_track_getter = True
 
-                # Use MetaDrive MainCamera.track API
                 if getattr(engine, "main_camera", None) is not None:
-                    engine.main_camera.track(target_vehicle)
+                    if self.view_mode == "bev":
+                        # Overhead Top-Down BEV view
+                        engine.main_camera.stop_track()
+                        pos = target_vehicle.position
+                        engine.main_camera.camera.setPos(pos[0], pos[1], 75.0)
+                        engine.main_camera.camera.lookAt(pos[0], pos[1], 0.0)
+                    else:
+                        # 3D Chase Camera
+                        engine.main_camera.track(target_vehicle)
 
                 if hasattr(engine, "agent_manager") and hasattr(engine.agent_manager, "set_current_agent"):
                     engine.agent_manager.set_current_agent(agent_id)

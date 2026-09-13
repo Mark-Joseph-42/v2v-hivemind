@@ -52,7 +52,10 @@ echo "  [4] SCENARIO   - 4-Way Cross Intersection Navigation"
 echo "  [5] ABLATION   - Fleet Mode WITHOUT V2V Cooperative Defense"
 echo "  [6] HEADLESS   - Automated Verification Test (100 steps)"
 echo "  [7] TESTS      - Run Pytest Unit Test Suite"
-echo "  [q] Quit"
+echo "Keybindings inside 3D Window:"
+echo "  * [◄ / ►]  Cycle 3D Chase Camera Across Active CAVs"
+echo "  * [P]      Toggle between 3D Chase View and Overhead BEV Perception"
+echo "  * [W/A/S/D] Drive CAV_01 directly (in Human Mode)"
 echo ""
 read -p "Enter choice [1-7 or q]: " choice
 

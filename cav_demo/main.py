@@ -31,6 +31,7 @@ from cav_demo.minimap_renderer import MinimapRenderer
 from cav_demo.idm_fleet_policy import IDMFleetController
 from cav_demo.human_mode import HumanInTheLoopManager
 from cav_demo.logger import TelemetryLogger
+from cav_demo.collaborative_perception import CollaborativePerceptionEngine
 from cav_demo.utils import print_banner, Colors, format_agent_name
 
 
@@ -129,6 +130,7 @@ def main():
     cam_ctrl = CameraController(config=cam_cfg)
     telemetry_hud = TelemetryHUD(config=hud_cfg)
     minimap = MinimapRenderer(config=mini_cfg)
+    collab_engine = CollaborativePerceptionEngine()
 
     enable_coop = not args.disable_coop
     fleet_controller = IDMFleetController(enable_coop_braking=enable_coop)
@@ -149,6 +151,7 @@ def main():
         initial_focus = cam_ctrl.get_focused_agent_id(env)
 
         print(f"{Colors.GREEN}[Ready]{Colors.ENDC} Live demo running! Press Left/Right arrow keys to cycle camera.")
+        print(f"{Colors.CYAN}[Controls]{Colors.ENDC} Press [P] to toggle 3D Chase Cam <--> Overhead BEV Perception View.")
         if args.mode == "human":
             print(f"{Colors.YELLOW}[Interactive]{Colors.ENDC} Use W/A/S/D to drive CAV_01. Slam 'S' to broadcast emergency brake!")
 
@@ -186,6 +189,7 @@ def main():
             v2v_mesh.broadcast_step(agents, step=step, actions_dict=actions)
 
             # E. Camera & Telemetry HUD Update
+            cam_ctrl.update_frame(env)
             focused_id = cam_ctrl.get_focused_agent_id(env)
             is_coop = False
             if args.mode == "human":
@@ -193,13 +197,18 @@ def main():
             else:
                 is_coop = fleet_controller.is_coop_braking(focused_id)
 
+            # E2. V2V Collaborative Perception & Occlusion Blind-Spot Fill-in
+            collab_summary = collab_engine.update(env, focused_id, v2v_mesh)
+
             telemetry_hud.update(
                 env=env,
                 focused_agent_id=focused_id,
                 v2v_mesh=v2v_mesh,
                 actions_dict=actions,
                 mode=args.mode,
-                is_coop_braking=is_coop
+                is_coop_braking=is_coop,
+                collab_summary=collab_summary,
+                view_mode=cam_ctrl.view_mode
             )
 
             # F. Minimap PiP Update
@@ -240,6 +249,7 @@ def main():
     except KeyboardInterrupt:
         print("\n\nDemonstration paused by user (KeyboardInterrupt). Exiting cleanly...")
     finally:
+        collab_engine.destroy()
         telemetry_hud.destroy()
         minimap.destroy()
         logger.close()

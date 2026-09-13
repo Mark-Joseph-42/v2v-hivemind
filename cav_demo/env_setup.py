@@ -39,6 +39,21 @@ def create_env(config: Optional[SimulationConfig] = None, mode: str = "fleet", h
             BaseEngine.current_track_agent = property(_safe_current_track_agent)
             BaseEngine._safe_current_track_agent_patched = True
 
+        # Ensure Panda3D PSSM shadow task never crashes on NaN camera matrix during reset
+        try:
+            from metadrive.engine.core.pssm import PSSM
+            if not hasattr(PSSM, "_safe_update_patched"):
+                orig_pssm_update = PSSM.update
+                def safe_pssm_update(pssm_self, task):
+                    try:
+                        return orig_pssm_update(pssm_self, task)
+                    except (AssertionError, Exception):
+                        return task.cont
+                PSSM.update = safe_pssm_update
+                PSSM._safe_update_patched = True
+        except Exception:
+            pass
+
     except ImportError as e:
         print(f"[Error] Failed to import MetaDrive: {e}")
         print("Please ensure metadrive-simulator is installed in the active virtual environment.")
