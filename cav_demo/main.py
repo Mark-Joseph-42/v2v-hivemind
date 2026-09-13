@@ -229,7 +229,7 @@ def main():
             # E2. V2V Collaborative Perception & Occlusion Blind-Spot Fill-in
             # In BEV / Perception mode: draw fluorescent green beacon rings at occluded targets.
             # In 3D Chase / Real mode: keep viewport clean and realistic.
-            if cam_ctrl.view_mode == "bev":
+            if cam_ctrl.view_mode == "bev" or args.mode == "perception":
                 collab_summary = collab_engine.update(env, focused_id, v2v_mesh)
             else:
                 collab_engine.clear_visualization()

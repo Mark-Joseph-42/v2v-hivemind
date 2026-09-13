@@ -11,23 +11,50 @@ Implements Beyond-Line-of-Sight (BLOS) Cooperative Perception (ETSI TR 103 562 /
 
 import math
 from typing import Any, Dict, List, Optional, Set, Tuple
-import numpy as np
+from cav_demo.utils import format_agent_name
+
+
+def is_line_blocked(
+    p_from: Tuple[float, float],
+    p_to: Tuple[float, float],
+    obstacles: List[Tuple[float, float]],
+    vehicle_width: float = 2.4
+) -> bool:
+    """Return True if the line segment from p_from to p_to is blocked by any intervening obstacle."""
+    x1, y1 = p_from
+    x2, y2 = p_to
+    dx = x2 - x1
+    dy = y2 - y1
+    seg_len_sq = dx * dx + dy * dy
+    if seg_len_sq < 1e-4:
+        return False
+
+    for ox, oy in obstacles:
+        vx = ox - x1
+        vy = oy - y1
+        t = (vx * dx + vy * dy) / seg_len_sq
+        # Obstacle must lie strictly between p_from and p_to (with buffer)
+        if 0.08 < t < 0.92:
+            nx = x1 + t * dx
+            ny = y1 + t * dy
+            dist_to_ray = math.hypot(ox - nx, oy - ny)
+            if dist_to_ray < (vehicle_width * 0.85):
+                return True
+    return False
 
 
 class CollaborativePerceptionEngine:
     """
     Computes and visualizes collaborative beyond-line-of-sight perception.
-    Fills in the ego vehicle's LiDAR occlusion shadow with green markers
-    using observations transmitted by neighboring CAVs over the V2V mesh.
+    Fills in the ego vehicle's LiDAR occlusion shadow with radiant green markers
+    using observations transmitted by neighboring CAVs over the V2V wireless mesh.
     """
 
-    def __init__(self, circle_radius: float = 2.4, circle_segments: int = 24):
+    def __init__(self, circle_radius: float = 2.6, circle_segments: int = 24):
         self.circle_radius = circle_radius
         self.circle_segments = circle_segments
-        self._line_node: Any = None
         self._np: Any = None
-        self._initialized: bool = False
-        
+
         # Telemetry metrics
         self.resolved_occlusions_count: int = 0
         self.closest_collaborative_dist: float = 50.0
@@ -49,8 +76,38 @@ class CollaborativePerceptionEngine:
             self.clear_visualization()
             return self.get_summary()
 
-        # 1. Retrieve observation objects from MetaDrive
-        obss = {}
+        # 1. Retrieve ego coordinates & elevation
+        ego_pos = (float(ego_veh.position[0]), float(ego_veh.position[1]))
+        if hasattr(ego_veh, "origin") and hasattr(ego_veh.origin, "getPos"):
+            try:
+                ego_z = float(ego_veh.origin.getPos()[2]) + 0.12
+            except Exception:
+                ego_z = 0.85
+        else:
+            ego_z = 0.85
+
+        # 2. Collect all active peer CAVs within V2V communication range (80m)
+        peer_cavs: List[Tuple[str, Tuple[float, float], float, Any]] = []
+        for aid, veh in agents_dict.items():
+            if aid == ego_agent_id:
+                continue
+            try:
+                pos = (float(veh.position[0]), float(veh.position[1]))
+                dist = math.hypot(pos[0] - ego_pos[0], pos[1] - ego_pos[1])
+                if dist <= 80.0:
+                    if hasattr(veh, "origin") and hasattr(veh.origin, "getPos"):
+                        try:
+                            vz = float(veh.origin.getPos()[2]) + 0.12
+                        except Exception:
+                            vz = 0.85
+                    else:
+                        vz = 0.85
+                    peer_cavs.append((aid, pos, vz, veh))
+            except Exception:
+                pass
+
+        # 3. Retrieve observation objects from MetaDrive
+        obss: Dict[str, Any] = {}
         if hasattr(env, "agent_manager") and hasattr(env.agent_manager, "get_observations"):
             try:
                 obss = env.agent_manager.get_observations()
@@ -58,63 +115,124 @@ class CollaborativePerceptionEngine:
                 obss = {}
 
         ego_obs = obss.get(ego_agent_id)
-        ego_pos = (float(ego_veh.position[0]), float(ego_veh.position[1]))
-
-        # Objects directly detected by ego vehicle
         ego_detected_ids: Set[int] = set()
         if ego_obs is not None and hasattr(ego_obs, "detected_objects") and ego_obs.detected_objects:
             ego_detected_ids = {id(obj) for obj in ego_obs.detected_objects}
 
-        # 2. Find objects detected by neighboring CAVs that are occluded from ego
-        collaborative_targets: List[Tuple[float, float, str]] = []
+        # 4. Collect all obstacle candidates (traffic vehicles + peer CAVs)
+        all_obstacles: List[Tuple[str, Tuple[float, float], float, Any]] = []
+        if hasattr(env, "engine") and hasattr(env.engine, "traffic_manager") and env.engine.traffic_manager:
+            for tv in getattr(env.engine.traffic_manager, "vehicles", []):
+                try:
+                    tpos = (float(tv.position[0]), float(tv.position[1]))
+                    tz = float(tv.origin.getPos()[2]) + 0.14 if hasattr(tv, "origin") else 0.85
+                    all_obstacles.append(("traffic", tpos, tz, tv))
+                except Exception:
+                    pass
+
+        for aid, pos, vz, veh in peer_cavs:
+            all_obstacles.append((aid, pos, vz, veh))
+
+        obs_positions = [pos for _, pos, _, _ in all_obstacles]
+
+        # 5. Detect occluded targets (in LiDAR shadow or revealed by peer observation)
+        collaborative_targets: List[Tuple[float, float, float, str, Optional[Tuple[float, float]]]] = []
         min_dist_found = 50.0
         revealing_partner = "NONE"
+        processed_target_keys: Set[str] = set()
 
-        for neighbor_id, neighbor_veh in agents_dict.items():
-            if neighbor_id == ego_agent_id:
+        # A. Sensor observation based unmasking (ETSI CPM standard)
+        for peer_id, peer_pos, peer_z, _ in peer_cavs:
+            p_obs = obss.get(peer_id)
+            if p_obs is None or not hasattr(p_obs, "detected_objects") or not p_obs.detected_objects:
                 continue
 
-            # Check if neighbor is within V2V communication range
-            n_pos = (float(neighbor_veh.position[0]), float(neighbor_veh.position[1]))
-            dist_to_neighbor = math.hypot(n_pos[0] - ego_pos[0], n_pos[1] - ego_pos[1])
-            if dist_to_neighbor > 80.0:
-                continue
+            sender_name = format_agent_name(peer_id)
+            for target_obj in p_obs.detected_objects:
+                # Do not treat ego vehicle as an occluded target to itself
+                if target_obj is ego_veh or id(target_obj) == id(ego_veh):
+                    continue
 
-            n_obs = obss.get(neighbor_id)
-            if n_obs is None or not hasattr(n_obs, "detected_objects") or not n_obs.detected_objects:
-                continue
-
-            for target_obj in n_obs.detected_objects:
-                # If target is NOT directly visible to ego, it lies in ego's occlusion shadow!
                 if id(target_obj) not in ego_detected_ids and hasattr(target_obj, "position"):
                     t_pos = (float(target_obj.position[0]), float(target_obj.position[1]))
                     t_dist = math.hypot(t_pos[0] - ego_pos[0], t_pos[1] - ego_pos[1])
+                    if 2.5 <= t_dist <= 60.0:
+                        tz = float(target_obj.origin.getPos()[2]) + 0.14 if hasattr(target_obj, "origin") else 0.85
+                        t_key = f"{t_pos[0]:.1f}_{t_pos[1]:.1f}"
+                        if t_key not in processed_target_keys:
+                            processed_target_keys.add(t_key)
+                            collaborative_targets.append((t_pos[0], t_pos[1], tz, sender_name, peer_pos))
+                            if t_dist < min_dist_found:
+                                min_dist_found = t_dist
+                                revealing_partner = sender_name
 
-                    # Only highlight targets within a realistic collaborative radius (e.g. 50m)
-                    if t_dist <= 50.0:
-                        from cav_demo.utils import format_agent_name
-                        sender_name = format_agent_name(neighbor_id)
-                        collaborative_targets.append((t_pos[0], t_pos[1], sender_name))
-                        if t_dist < min_dist_found:
-                            min_dist_found = t_dist
-                            revealing_partner = sender_name
+        # B. Geometric LiDAR shadow ray occlusion detection
+        for tag, pos, tz, obj in all_obstacles:
+            t_key = f"{pos[0]:.1f}_{pos[1]:.1f}"
+            if t_key in processed_target_keys:
+                continue
+
+            t_dist = math.hypot(pos[0] - ego_pos[0], pos[1] - ego_pos[1])
+            if t_dist > 60.0 or t_dist < 3.0:
+                continue
+
+            # Other obstacles that could block line-of-sight between ego and target
+            intervening = [p for p in obs_positions if p != pos]
+            if is_line_blocked(ego_pos, pos, intervening):
+                # Find the best peer CAV that has unblocked line-of-sight to reveal target
+                best_revealer = "NONE"
+                best_revealer_pos: Optional[Tuple[float, float]] = None
+                best_peer_dist = 999.0
+
+                for peer_id, peer_pos, _, _ in peer_cavs:
+                    if not is_line_blocked(peer_pos, pos, intervening):
+                        p_dist = math.hypot(peer_pos[0] - pos[0], peer_pos[1] - pos[1])
+                        if p_dist < best_peer_dist:
+                            best_peer_dist = p_dist
+                            best_revealer = format_agent_name(peer_id)
+                            best_revealer_pos = peer_pos
+
+                if best_revealer == "NONE" and peer_cavs:
+                    # Fallback to nearest peer CAV within V2V mesh
+                    sorted_peers = sorted(peer_cavs, key=lambda p: math.hypot(p[1][0] - pos[0], p[1][1] - pos[1]))
+                    best_revealer = format_agent_name(sorted_peers[0][0])
+                    best_revealer_pos = sorted_peers[0][1]
+
+                if best_revealer != "NONE":
+                    processed_target_keys.add(t_key)
+                    collaborative_targets.append((pos[0], pos[1], tz, best_revealer, best_revealer_pos))
+                    if t_dist < min_dist_found:
+                        min_dist_found = t_dist
+                        revealing_partner = best_revealer
 
         self.resolved_occlusions_count = len(collaborative_targets)
-        self.closest_collaborative_dist = min_dist_found
-        self.revealing_partner_name = revealing_partner
+        if self.resolved_occlusions_count == 0:
+            self.closest_collaborative_dist = 50.0
+            self.revealing_partner_name = "NONE"
+        else:
+            self.closest_collaborative_dist = min_dist_found
+            self.revealing_partner_name = revealing_partner
 
-        # 3. Draw green collaborative circles in Panda3D viewport
-        self._render_green_circles(env, collaborative_targets, ego_pos)
+        # 6. Render 3D fluorescent green circles, mesh links, and cyan ego ring in Panda3D
+        self._render_collaborative_scene(
+            env=env,
+            ego_pos=ego_pos,
+            ego_z=ego_z,
+            peer_cavs=peer_cavs,
+            collaborative_targets=collaborative_targets
+        )
 
         return self.get_summary()
 
-    def _render_green_circles(
+    def _render_collaborative_scene(
         self,
         env: Any,
-        targets: List[Tuple[float, float, str]],
-        ego_pos: Tuple[float, float]
+        ego_pos: Tuple[float, float],
+        ego_z: float,
+        peer_cavs: List[Tuple[str, Tuple[float, float], float, Any]],
+        collaborative_targets: List[Tuple[float, float, float, str, Optional[Tuple[float, float]]]]
     ):
-        """Render 3D green beacon circles at all collaborative target locations."""
+        """Render 3D fluorescent green beacon rings and V2V wireless mesh links in Panda3D."""
         engine = getattr(env, "engine", None)
         if engine is None or not hasattr(engine, "render") or engine.render is None:
             return
@@ -122,54 +240,96 @@ class CollaborativePerceptionEngine:
         # Clear previous frame's geometry
         self.clear_visualization()
 
-        if not targets:
-            return
-
         try:
-            from panda3d.core import LineSegs, NodePath
+            from panda3d.core import LineSegs
 
             ls = LineSegs("v2v_collaborative_perception")
-            # Bright fluorescent green for V2V augmentation
-            ls.setColor(0.05, 1.0, 0.25, 1.0)
-            ls.setThickness(2.8)
+            ls.setThickness(3.2)
 
-            z_height = 0.45  # Hover slightly above road asphalt to prevent z-fighting
+            # 1. Draw Electric Cyan Ring around focused ego vehicle
+            ls.setColor(0.15, 0.85, 1.0, 1.0)
+            for i in range(self.circle_segments + 1):
+                theta = i * 2.0 * math.pi / self.circle_segments
+                px = ego_pos[0] + self.circle_radius * math.cos(theta)
+                py = ego_pos[1] + self.circle_radius * math.sin(theta)
+                if i == 0:
+                    ls.moveTo(px, py, ego_z)
+                else:
+                    ls.drawTo(px, py, ego_z)
 
-            for tx, ty, sender_name in targets:
-                # Draw outer green beacon circle
+            # 2. Draw Radiant Green Rings & V2V Wireless Links on all peer CAVs
+            ls.setColor(0.0, 1.0, 0.25, 1.0)
+            for aid, peer_pos, peer_z, _ in peer_cavs:
+                # Outer ring
                 for i in range(self.circle_segments + 1):
                     theta = i * 2.0 * math.pi / self.circle_segments
-                    px = tx + self.circle_radius * math.cos(theta)
-                    py = ty + self.circle_radius * math.sin(theta)
+                    px = peer_pos[0] + (self.circle_radius * 1.15) * math.cos(theta)
+                    py = peer_pos[1] + (self.circle_radius * 1.15) * math.sin(theta)
                     if i == 0:
-                        ls.moveTo(px, py, z_height)
+                        ls.moveTo(px, py, peer_z)
                     else:
-                        ls.drawTo(px, py, z_height)
+                        ls.drawTo(px, py, peer_z)
 
-                # Draw inner concentric ring
-                inner_r = self.circle_radius * 0.55
+                # Inner ring
+                inner_r = self.circle_radius * 0.58
                 for i in range(self.circle_segments + 1):
                     theta = i * 2.0 * math.pi / self.circle_segments
-                    px = tx + inner_r * math.cos(theta)
-                    py = ty + inner_r * math.sin(theta)
+                    px = peer_pos[0] + inner_r * math.cos(theta)
+                    py = peer_pos[1] + inner_r * math.sin(theta)
                     if i == 0:
-                        ls.moveTo(px, py, z_height)
+                        ls.moveTo(px, py, peer_z)
                     else:
-                        ls.drawTo(px, py, z_height)
+                        ls.drawTo(px, py, peer_z)
 
-                # Draw crosshairs
-                ls.moveTo(tx - self.circle_radius * 1.3, ty, z_height)
-                ls.drawTo(tx + self.circle_radius * 1.3, ty, z_height)
-                ls.moveTo(tx, ty - self.circle_radius * 1.3, z_height)
-                ls.drawTo(tx, ty + self.circle_radius * 1.3, z_height)
+                # Crosshairs
+                ch_len = self.circle_radius * 1.45
+                ls.moveTo(peer_pos[0] - ch_len, peer_pos[1], peer_z)
+                ls.drawTo(peer_pos[0] + ch_len, peer_pos[1], peer_z)
+                ls.moveTo(peer_pos[0], peer_pos[1] - ch_len, peer_z)
+                ls.drawTo(peer_pos[0], peer_pos[1] + ch_len, peer_z)
+
+                # V2V Wireless Mesh Link Beam connecting ego to peer
+                ls.moveTo(ego_pos[0], ego_pos[1], ego_z)
+                ls.drawTo(peer_pos[0], peer_pos[1], peer_z)
+
+            # 3. Draw High-Intensity Green Beacon Rings on occluded targets in shadow
+            ls.setColor(0.05, 1.0, 0.20, 1.0)
+            for tx, ty, tz, revealer_name, revealer_pos in collaborative_targets:
+                # Concentric multi-tier beacon rings
+                for r in [self.circle_radius * 1.35, self.circle_radius * 0.90, self.circle_radius * 0.45]:
+                    for i in range(self.circle_segments + 1):
+                        theta = i * 2.0 * math.pi / self.circle_segments
+                        px = tx + r * math.cos(theta)
+                        py = ty + r * math.sin(theta)
+                        if i == 0:
+                            ls.moveTo(px, py, tz)
+                        else:
+                            ls.drawTo(px, py, tz)
+
+                # Prominent crosshairs
+                ch_len = self.circle_radius * 1.70
+                ls.moveTo(tx - ch_len, ty, tz)
+                ls.drawTo(tx + ch_len, ty, tz)
+                ls.moveTo(tx, ty - ch_len, tz)
+                ls.drawTo(tx, ty + ch_len, tz)
+
+                # Cooperative unmasking beam from revealing partner to target
+                if revealer_pos is not None:
+                    ls.moveTo(revealer_pos[0], revealer_pos[1], tz)
+                    ls.drawTo(tx, ty, tz)
 
             geom_node = ls.create()
             self._np = engine.render.attachNewNode(geom_node)
+            # Critical Panda3D render flags to guarantee vibrant visibility
+            self._np.setLightOff()
+            self._np.setShaderOff()
+            self._np.setDepthTest(False)
+            self._np.setBin("transparent", 100)
         except Exception:
             pass
 
     def clear_visualization(self):
-        """Remove previously drawn green circles."""
+        """Remove previously drawn green circles and mesh links."""
         if self._np is not None:
             try:
                 self._np.removeNode()

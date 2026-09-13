@@ -329,7 +329,7 @@ class TelemetryHUD:
             banner_fg = (0.2, 1.0, 0.3, 1.0)
         else:
             view_label = "3D View" if view_mode == "bev" else "BEV View"
-            banner_text = f"[◄ / ►] Cycle CAV | [P / V] Switch to {view_label} | Tracking: {focused_name} | Mode: {mode.upper()}"
+            banner_text = f"[<- / ->] Cycle CAV | [P / V] Switch to {view_label} | Tracking: {focused_name} | Mode: {mode.upper()}"
             banner_fg = (0.2, 1.0, 0.4, 1.0)
 
         return "\n".join(lines), banner_text, banner_fg
