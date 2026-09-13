@@ -42,9 +42,16 @@ def parse_args():
     parser.add_argument(
         "--mode",
         type=str,
-        choices=["fleet", "human"],
+        choices=["fleet", "perception", "human"],
         default="fleet",
-        help="Operating mode: 'fleet' (autonomous fleet observation) or 'human' (interactive human driving)"
+        help="Operating mode: 'fleet' (Real 3D Chase View), 'perception' (Overhead BEV Perception View), or 'human' (interactive W/A/S/D driving)"
+    )
+    parser.add_argument(
+        "--view",
+        type=str,
+        choices=["chase", "bev"],
+        default=None,
+        help="Camera perspective override: 'chase' (3D realistic follow camera) or 'bev' (overhead Top-Down BEV Perception)"
     )
     parser.add_argument(
         "--agents",
@@ -77,6 +84,11 @@ def parse_args():
         help="Run without 3D window (for automated testing and benchmarking)"
     )
     parser.add_argument(
+        "--show-lidar",
+        action="store_true",
+        help="Explicitly enable 3D LiDAR laser rays in viewport"
+    )
+    parser.add_argument(
         "--hide-lidar",
         action="store_true",
         help="Hide real-time 3D laser scan rays in viewport"
@@ -106,7 +118,20 @@ def main():
     # 1. Print RSET Demonstration Banner
     print_banner(mode=args.mode, num_agents=args.agents)
 
-    # 2. Build Configurations
+    # 2. Resolve initial view & LiDAR visibility
+    if args.view is not None:
+        initial_view = args.view
+    elif args.mode == "perception":
+        initial_view = "bev"
+    else:
+        initial_view = "chase"
+
+    if args.mode == "perception":
+        show_lidar = not args.hide_lidar
+    else:
+        show_lidar = True if args.show_lidar else False
+
+    # 3. Build Configurations
     sim_cfg = SimulationConfig(
         num_agents=args.agents,
         map_blocks=args.map,
@@ -114,20 +139,20 @@ def main():
         traffic_density=args.traffic,
         use_render=not args.headless,
         manual_control=(args.mode == "human"),
-        show_lidar=not args.hide_lidar
+        show_lidar=show_lidar
     )
     v2v_cfg = V2VConfig()
-    cam_cfg = CameraConfig()
+    cam_cfg = CameraConfig(initial_view=initial_view)
     hud_cfg = HUDConfig()
     mini_cfg = MinimapConfig(enabled=not args.headless)
 
-    # 3. Create Environment
+    # 4. Create Environment
     print(f"{Colors.BLUE}[MetaDrive]{Colors.ENDC} Initializing PGMA Multi-Agent Environment ({args.agents} CAVs)...")
     env = create_env(config=sim_cfg, mode=args.mode, headless=args.headless)
 
-    # 4. Instantiate Subsystems
+    # 5. Instantiate Subsystems
     v2v_mesh = V2VNetworkMesh(config=v2v_cfg)
-    cam_ctrl = CameraController(config=cam_cfg)
+    cam_ctrl = CameraController(config=cam_cfg, initial_view=initial_view)
     telemetry_hud = TelemetryHUD(config=hud_cfg)
     minimap = MinimapRenderer(config=mini_cfg)
     collab_engine = CollaborativePerceptionEngine()
@@ -202,7 +227,13 @@ def main():
                 is_coop = fleet_controller.is_coop_braking(focused_id)
 
             # E2. V2V Collaborative Perception & Occlusion Blind-Spot Fill-in
-            collab_summary = collab_engine.update(env, focused_id, v2v_mesh)
+            # In BEV / Perception mode: draw fluorescent green beacon rings at occluded targets.
+            # In 3D Chase / Real mode: keep viewport clean and realistic.
+            if cam_ctrl.view_mode == "bev":
+                collab_summary = collab_engine.update(env, focused_id, v2v_mesh)
+            else:
+                collab_engine.clear_visualization()
+                collab_summary = collab_engine.get_summary()
 
             telemetry_hud.update(
                 env=env,

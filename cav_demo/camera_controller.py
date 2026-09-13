@@ -21,10 +21,10 @@ class CameraController:
     - Toggle between 3D Chase Camera and Top-Down BEV Perception Mode with [P] key
     """
 
-    def __init__(self, config: Optional[CameraConfig] = None):
+    def __init__(self, config: Optional[CameraConfig] = None, initial_view: Optional[str] = None):
         self.config = config or CameraConfig()
         self.current_agent_id: Optional[str] = None
-        self.view_mode: str = "chase"  # "chase" (3D chase cam) or "bev" (top-down perception)
+        self.view_mode: str = initial_view or getattr(self.config, "initial_view", "chase")
         self.last_switch_time: float = 0.0
         self.last_toggle_time: float = 0.0
         self._registered_keys: bool = False

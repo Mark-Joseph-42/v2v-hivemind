@@ -45,46 +45,53 @@ echo "=================================================================="
 echo ""
 echo "Select Demonstration Mode for the Evaluation Panel:"
 echo ""
-echo "  [1] FLEET MODE - Highway Corridor (Arrow-Key Camera + 3D LiDAR)"
-echo "  [2] HUMAN MODE - Interactive W/A/S/D Driving + Fleet Defense"
-echo "  [3] SCENARIO   - Multi-Lane Roundabout Coordination"
-echo "  [4] SCENARIO   - 4-Way Cross Intersection Navigation"
-echo "  [5] ABLATION   - Fleet Mode WITHOUT V2V Cooperative Defense"
-echo "  [6] HEADLESS   - Automated Verification Test (100 steps)"
-echo "  [7] TESTS      - Run Pytest Unit Test Suite"
+echo "  [1] REAL VIEW       - 3D Chase Camera (Realistic Highway Driving & Telemetry)"
+echo "  [2] PERCEPTION VIEW - Top-Down BEV (360° LiDAR Rays + V2V Green Occlusion Rings)"
+echo "  [3] HUMAN MODE      - Interactive W/A/S/D Driving + Fleet Cooperative Defense"
+echo "  [4] SCENARIO        - Multi-Lane Roundabout Coordination"
+echo "  [5] SCENARIO        - 4-Way Cross Intersection Navigation"
+echo "  [6] ABLATION        - Fleet Mode WITHOUT V2V Cooperative Defense"
+echo "  [7] HEADLESS        - Automated Verification Test (100 steps)"
+echo "  [8] TESTS           - Run Pytest Unit Test Suite"
+echo "  [q] Quit"
+echo ""
 echo "Keybindings inside 3D Window:"
-echo "  * [◄ / ►]  Cycle 3D Chase Camera Across Active CAVs"
-echo "  * [P / V]  Toggle between 3D Chase View and Overhead BEV Perception"
+echo "  * [◄ / ►]  Cycle Camera Across Active CAVs"
+echo "  * [P / V]  Toggle between 3D Real View and Overhead BEV Perception"
 echo "  * [W/A/S/D] Drive CAV_01 directly (in Human Mode)"
 echo ""
-read -p "Enter choice [1-7 or q]: " choice
+read -p "Enter choice [1-8 or q]: " choice
 
 case "$choice" in
     1)
-        echo "Launching Fleet Observation Mode (Highway Corridor)..."
-        exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --scenario corridor --agents 4 --map 5
+        echo "Launching Real View Mode (3D Chase Camera, Highway Corridor)..."
+        exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --view chase --scenario corridor --agents 4 --map 5
         ;;
     2)
+        echo "Launching Perception View Mode (Overhead BEV + 360 LiDAR + V2V Green Rings)..."
+        exec "$PYTHON_EXEC" cav_demo/main.py --mode perception --view bev --scenario corridor --agents 4 --map 5
+        ;;
+    3)
         echo "Launching Human-in-the-Loop Interactive Mode..."
         exec "$PYTHON_EXEC" cav_demo/main.py --mode human --scenario corridor --agents 4 --map 5
         ;;
-    3)
+    4)
         echo "Launching Multi-Lane Roundabout Coordination Scenario..."
         exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --scenario roundabout --agents 4
         ;;
-    4)
+    5)
         echo "Launching 4-Way Cross Intersection Scenario..."
         exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --scenario intersection --agents 4
         ;;
-    5)
+    6)
         echo "Launching Fleet Mode WITHOUT V2V cooperative defense..."
         exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --scenario corridor --agents 4 --map 5 --disable-coop
         ;;
-    6)
+    7)
         echo "Running Headless Verification Test (100 steps)..."
         exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --agents 4 --headless --max-steps 100
         ;;
-    7)
+    8)
         echo "Running Unit Tests..."
         exec "$PYTHON_EXEC" -m pytest tests/ -v
         ;;
@@ -93,7 +100,7 @@ case "$choice" in
         exit 0
         ;;
     *)
-        echo "Invalid selection. Launching default Fleet Mode..."
+        echo "Invalid selection. Launching Real View Mode..."
         exec "$PYTHON_EXEC" cav_demo/main.py --mode fleet --agents 4
         ;;
 esac

@@ -46,6 +46,7 @@ class V2VConfig:
 class CameraConfig:
     """3D Chase Camera & switching configuration."""
     switch_cooldown_s: float = 0.25      # Debounce period for switching agents
+    initial_view: str = "chase"          # "chase" (real view) or "bev" (perception view)
     fov: float = 65.0
     chase_dist: float = 8.5
     chase_height: float = 2.8

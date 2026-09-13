@@ -63,9 +63,9 @@ def print_banner(mode: str, num_agents: int):
 {Colors.GREEN}● Active CAV Fleet   :{Colors.ENDC} {num_agents} Vehicles
 {Colors.GREEN}● Communication Mesh :{Colors.ENDC} V2V Cooperative Telemetry Enabled (80m Radius)
 {Colors.GREEN}● Interactive Keys   :{Colors.ENDC}
-    {Colors.YELLOW}[◄ / ►]{Colors.ENDC} Cycle Chase Camera Across Active CAVs
+    {Colors.YELLOW}[◄ / ►]{Colors.ENDC} Cycle Camera Across Active CAVs
+    {Colors.YELLOW}[P / V]{Colors.ENDC} Toggle 3D Real View <--> Overhead BEV Perception
     {Colors.YELLOW}[W/A/S/D]{Colors.ENDC} Control CAV_01 Directly (in Human Mode)
-    {Colors.YELLOW}[T]{Colors.ENDC}       Toggle CAV_01 Manual/Autonomous in Human Mode
     {Colors.YELLOW}[H / Esc]{Colors.ENDC} Toggle On-Screen Help / Exit Simulation
 ══════════════════════════════════════════════════════════════════════════════
 """)
