@@ -24,6 +24,12 @@ For the **30% Milestone Demonstration**, this codebase provides a fully interact
 
 ---
 
+## System Architecture Overview
+
+![System Architecture](overall_system_architecture.png)
+
+---
+
 ## 2. Directory Architecture
 
 ```
@@ -118,3 +124,24 @@ Runs a 100-step automated verification loop:
 | **V2V Communication & Networking** | Neha | 11D Kinematic extraction, mesh latency & packet drop simulation |
 | **Trajectory & Kinematic Telemetry** | Sanjana | Real-time Panda3D HUD, PiP minimap, coordinate & state conversions |
 | **Autonomous Policy & Cooperative Defense** | Ritu | IDM car-following wrapper, V2V cooperative deceleration trigger |
+
+---
+
+## 6. Evaluation & Telemetry Analysis
+
+The simulated telemetry recorded during mixed-autonomy fleet runs is logged to CSV in `logs/` and plotted using `cav_demo/plot_telemetry.py`.
+
+![CAV Telemetry Evaluation Plot](cav_evaluation_plot.png)
+
+### Key Observations:
+1. **Fleet Velocity Profiles & Defensive Braking:** Red scatter markers highlight instantaneous V2V cooperative braking events triggered upon detecting downstream emergency deceleration before line-of-sight radar detection.
+2. **V2V Transmission Latency:** The simulated ad-hoc geometric wireless mesh accurately models realistic physical channel noise with a baseline latency of 12.0 ms and Gaussian jitter ($\mu=12\,\text{ms}, \sigma=6\,\text{ms}$).
+
+---
+
+## 7. System Design & Behavioral Diagrams
+
+Detailed behavioral models covering the UML class architecture, the Cooperative Braking Finite State Machine (FSM), and runtime execution sequence:
+
+![System Design & Behavioral Diagrams](design_diagrams.png)
+

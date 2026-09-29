@@ -1,0 +1,558 @@
+====================================================================================================
+RAJAGIRI SCHOOL OF ENGINEERING & TECHNOLOGY (RSET) - AUTONOMOUS
+DEPARTMENT OF COMPUTER SCIENCE & ENGINEERING / ARTIFICIAL INTELLIGENCE
+FINAL YEAR B.TECH PROJECT - 30% MILESTONE CODEBASE SUMMARY
+====================================================================================================
+Project Title: Collaborative Trajectory Planning and Multi-Agent Orchestration for Connected 
+               Autonomous Vehicles in Mixed-Autonomy Environments
+Team Members : 
+  1. Mark Joseph Kuttikat (Team Lead & Principal Investigator)
+  2. Neha Benny (Co-Investigator)
+  3. Ritu Franklin (Co-Investigator)
+  4. Sanjana M Paul (Co-Investigator)
+Repository   : /home/mark-joseph/Desktop/main project
+Generated    : 30% Milestone Evaluation
+====================================================================================================
+
+TABLE OF CONTENTS:
+----------------------------------------------------------------------------------------------------
+1. ROOT SCRIPTS & SYSTEM CONFIGURATION
+   1.1 run_demo.sh
+   1.2 README.md
+   1.3 .gitignore
+
+2. CORE SIMULATION SUBSYSTEM (cav_demo/)
+   2.1 cav_demo/__init__.py
+   2.2 cav_demo/config.py
+   2.3 cav_demo/utils.py
+   2.4 cav_demo/env_setup.py
+   2.5 cav_demo/v2v_network.py
+   2.6 cav_demo/collaborative_perception.py
+   2.7 cav_demo/idm_fleet_policy.py
+   2.8 cav_demo/human_mode.py
+   2.9 cav_demo/camera_controller.py
+   2.10 cav_demo/telemetry_overlay.py
+   2.11 cav_demo/minimap_renderer.py
+   2.12 cav_demo/logger.py
+   2.13 cav_demo/plot_telemetry.py
+   2.14 cav_demo/main.py
+   2.15 cav_demo/requirements.txt
+
+3. AUTOMATED VERIFICATION & UNIT TESTS (tests/)
+   3.1 tests/test_v2v_network.py
+   3.2 tests/test_collaborative_perception.py
+
+4. CROSS-REFERENCE: TEAM MEMBER TO CODEBASE MATRIX
+
+====================================================================================================
+1. ROOT SCRIPTS & SYSTEM CONFIGURATION
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+1.1 run_demo.sh
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat
+* File Type   : POSIX Bash Shell Script (Executable)
+* Purpose     : Single-click orchestration script for launching and managing the demonstration 
+                environment without manual terminal flags.
+* Key Features:
+  - Verifies the Python 3.11 virtual environment (.venv).
+  - Configures NVIDIA Prime GPU offloading (__NV_PRIME_RENDER_OFFLOAD=1, __GLX_VENDOR_LIBRARY_NAME=nvidia)
+    to force rendering on the dedicated NVIDIA GPU (RTX 5060 Max-Q) rather than the integrated GPU.
+  - Interactive terminal CLI menu supporting 8 demonstration profiles:
+      [1] 3D Chase Camera (Highway Corridor)
+      [2] Overhead BEV Perception View (360° LiDAR rays + V2V green occlusion rings)
+      [3] Human-in-the-Loop Mode (W/A/S/D driving + fleet cooperative defense)
+      [4] Multi-Lane Roundabout Coordination Scenario
+      [5] 4-Way Cross Intersection Navigation Scenario
+      [6] Ablation Study (Fleet running without V2V cooperative braking)
+      [7] Headless Automated Smoke Test (100 simulation steps)
+      [8] Pytest Unit Test Execution
+* Traditional CS Concepts:
+  - Process environment variable propagation (export PYTHONPATH, VK_ICD_FILENAMES).
+  - POSIX process replacement using 'exec' to avoid orphan subshell zombies.
+  - Interactive shell I/O pattern matching via bash case constructs.
+
+----------------------------------------------------------------------------------------------------
+1.2 README.md
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat (with contributions from all team members)
+* File Type   : Markdown Documentation
+* Purpose     : Complete technical documentation, setup manual, architecture blueprint, and 
+                presentation guide for the 30% milestone review.
+* Key Contents:
+  - 30% Milestone scope: interactive 3D chase camera, live telemetry sidebar, PiP minimap,
+    cooperative defensive braking, and human-in-the-loop keyboard control.
+  - Complete project directory tree structure.
+  - Command-line flags and quickstart instructions.
+  - Full keyboard control reference table ([Left/Right], [P/V], [W/A/S/D], [Esc]).
+  - Module contribution alignment matrix mapping team members to their deliverables.
+
+----------------------------------------------------------------------------------------------------
+1.3 .gitignore
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat
+* File Type   : Git Configuration File
+* Purpose     : Prevents compilation artifacts, bytecode, environment folders, cache files,
+                and large evaluation log CSVs from polluting the version control system.
+* Ignored Patterns:
+  - Python bytecode: __pycache__/, *.pyc, *.pyo
+  - Virtual environments: .venv/, env/, venv/
+  - Test & coverage artifacts: .pytest_cache/, .coverage, htmlcov/
+  - Build & IDE caches: *.egg-info/, .idea/, .vscode/
+  - Runtime logs: logs/*.csv
+
+====================================================================================================
+2. CORE SIMULATION SUBSYSTEM (cav_demo/)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+2.1 cav_demo/__init__.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat
+* File Type   : Python Package Initializer
+* Purpose     : Marks the cav_demo/ folder as a formal Python package and defines package-level
+                metadata (__version__ = "0.3.0", milestone tag, and authorship).
+
+----------------------------------------------------------------------------------------------------
+2.2 cav_demo/config.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat (Fleet Parameters) & Sanjana M Paul (V2V Channel Parameters)
+* File Type   : Python Configuration Module
+* Purpose     : Centralized, single-source-of-truth configuration dataclasses for simulator physics,
+                wireless communication channel, camera perspective, HUD layout, and minimap rendering.
+* Core Dataclasses & Parameters:
+  - SimulationConfig:
+      num_agents=4, map_blocks=5, scenario="corridor", traffic_density=0.08,
+      horizon=4000, decision_repeat=5, physics_world_step_size=0.02s (50 Hz Bullet Physics),
+      lidar_num_lasers=72, lidar_distance=50.0m, window_size=(1280, 720).
+  - V2VConfig:
+      comm_radius_m=80.0m, base_latency_ms=12.0ms, latency_jitter_ms=6.0ms,
+      packet_drop_rate=0.02 (2% Bernoulli loss), packet_history_len=25,
+      brake_warning_threshold=-0.35, coop_brake_radius_m=45.0m.
+  - CameraConfig:
+      switch_cooldown_s=0.25s debounce, initial_view="chase", fov=65.0°,
+      chase_dist=8.5m, chase_height=2.8m.
+  - HUDConfig:
+      update_interval_s=0.05s (20 Hz refresh), sidebar_x=0.58, sidebar_top_y=-0.06,
+      RGBA color definitions for normal, warning, caution, and card background.
+  - MinimapConfig:
+      size=(260, 260), update_interval_frames=3, screen_pos=(-1.08, -0.68).
+* Traditional CS Concepts:
+  - Declarative configuration pattern using Python @dataclass.
+  - Parameter decoupling to allow zero-code-change hyperparameter tuning for benchmarking.
+
+----------------------------------------------------------------------------------------------------
+2.3 cav_demo/utils.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat & Neha Benny
+* File Type   : Python Math & Terminal Formatting Utilities
+* Purpose     : Provides unit conversions, mathematical distance metrics, ANSI color codes,
+                agent identifier sanitization, and presentation console banners.
+* Key Functions & Classes:
+  - Colors: ANSI escape sequences for formatted terminal output (CYAN, GREEN, YELLOW, RED, BOLD).
+  - format_agent_name(agent_id): Converts internal engine keys ("agent0", "agent_1") into standardized
+    presentation strings ("CAV_01", "CAV_02").
+  - mps_to_kmh(speed_mps): Converts m/s to km/h (v * 3.6).
+  - rad_to_deg(angle_rad): Converts radians to normalized degrees in [-180, 180].
+  - euclidean_distance(pos_a, pos_b): Computes 2D Euclidean norm: sqrt((x1-x2)^2 + (y1-y2)^2).
+  - print_banner(mode, num_agents): Formats and prints the RSET project ASCII banner.
+* Traditional CS Concepts:
+  - Pure functions without side effects for numerical operations.
+  - String manipulation and regular expression digit extraction.
+
+----------------------------------------------------------------------------------------------------
+2.4 cav_demo/env_setup.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat & Ritu Franklin
+* File Type   : Simulation Environment Factory
+* Purpose     : Instantiates and configures the MultiAgentMetaDrive simulation environment and applies
+                runtime engine monkey-patches for stability.
+* Key Functions & Logic:
+  - create_env(config, mode, headless):
+      Builds environment dictionary with physics timestep, decision repeat, LiDAR lasers, traffic
+      density, and manual control overrides.
+      Supports procedural scenario selection:
+        * MultiAgentMetaDrive (Corridor Highway)
+        * MultiAgentRoundaboutEnv (Multi-lane Roundabout)
+        * MultiAgentIntersectionEnv (4-Way Crossroad)
+        * MultiAgentBottleneckEnv (Highway lane squeeze)
+        * MultiAgentTollgateEnv (Toll plaza lane merge)
+        * MultiAgentParkingLotEnv (Parking navigation)
+  - get_active_agents_dict(env):
+      Safely resolves active agent dictionary across various MetaDrive agent manager states.
+* Traditional CS & Defensive Programming Concepts:
+  - Dynamic Runtime Monkey-Patching (Metaprogramming):
+      1. BaseEngine._safe_current_track_agent: Overrides engine property to prevent null pointer
+         dereference exceptions in ManualControlPolicy when agents spawn or change focus.
+      2. PSSM._safe_update_patched: Catches assertion errors in Panda3D's Parallel Split Shadow Map
+         task caused by transient NaN camera matrices during scene reset, preventing crashes.
+  - Factory Design Pattern: Encapsulates complex object creation behind a clean interface.
+
+----------------------------------------------------------------------------------------------------
+2.5 cav_demo/v2v_network.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Sanjana M Paul
+* File Type   : Distributed V2V Mesh Network Simulator
+* Purpose     : Simulates a decentralized, wireless ad-hoc vehicle-to-vehicle communication network,
+                extracting 11D kinematic packets, modeling transmission noise, and propagating emergency alerts.
+* Key Classes & Methods:
+  - V2VPacket (dataclass):
+      Contains: sender_id, display_name, step, pos (x, y), velocity (vx, vy), speed_kmh,
+      heading_rad, yaw_rate, steering, throttle, is_braking flag, lane_index,
+      11D kinematic NumPy vector, latency_ms, and dropped status flag.
+  - V2VNetworkMesh:
+      * extract_kinematics(agent_id, vehicle, step, last_action):
+          Extracts position, velocities, Bullet chassis yaw rate, steering, and throttle.
+          Constructs the 11D continuous state array (float32).
+          Samples stochastic latency from normal distribution: N(mu=12ms, sigma=6ms).
+          Simulates packet drop via Bernoulli trial: P(drop) = 0.02.
+      * broadcast_step(agents_dict, step, actions_dict):
+          Simulates a round of wireless broadcast over an ad-hoc geometric graph G = (V, E).
+          Iterates pairwise between vehicles; establishes communication link if Euclidean distance
+          d <= comm_radius_m (80.0m). Non-dropped packets are appended to receiver's history queue.
+      * get_emergency_brake_warnings(receiver_id, max_distance, only_in_front):
+          Scans latest known states for braking neighbors within warning radius (30m).
+          Applies 2D vector projection to ensure hazard is ahead of receiver along vehicle heading:
+            long_dist = dx * cos(heading) + dy * sin(heading)
+            Filters out vehicles behind (long_dist < -2.0m).
+      * get_aggregate_stats():
+          Computes rolling average latency, total broadcasts, total drops, and packet loss rate.
+* Traditional CS Concepts:
+  - Data Structures: Bounded FIFO double-ended queues (collections.deque(maxlen=25)) ensuring O(1)
+    insertion and oldest-element eviction without dynamic list reallocations.
+  - Geometric Random Graph: Dynamic edge generation based on spatial proximity threshold (R = 80m).
+  - Stochastic Modeling: Gaussian noise generator (random.gauss) and Bernoulli trials.
+  - Computational Geometry: 2D dot product vector projection for directional field-of-view filtering.
+  - Time Complexity: O(N^2) pairwise broadcast check per step (bounded, N <= 32).
+
+----------------------------------------------------------------------------------------------------
+2.6 cav_demo/collaborative_perception.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Sanjana M Paul & Ritu Franklin
+* File Type   : Cooperative Beyond-Line-of-Sight (BLOS) Perception Engine
+* Purpose     : Implements Beyond-Line-of-Sight perception (ETSI TR 103 562 / SAE J3186 standard)
+                by unmasking obstacles hidden inside the ego vehicle's LiDAR occlusion shadow using
+                neighboring CAV sensor data shared over the V2V mesh.
+* Key Functions & Classes:
+  - is_line_blocked(p_from, p_to, obstacles, vehicle_width=2.4):
+      Computes analytical line-segment obstacle intersection. Projects obstacle vector v = (ox-x1, oy-y1)
+      onto ray direction vector d = (x2-x1, y2-y1):
+        t = (v . d) / ||d||^2
+      If 0.08 < t < 0.92 (obstacle lies between endpoints), computes orthogonal distance:
+        dist_to_ray = ||v - t*d||
+      Returns True if dist_to_ray < (vehicle_width * 0.85).
+  - CollaborativePerceptionEngine:
+      * update(env, ego_agent_id, v2v_mesh):
+          1. Gathers peer CAVs within 80m V2V communication range.
+          2. Extracts MetaDrive local LiDAR observation objects for ego and peers.
+          3. Identifies targets hidden in ego vehicle's occlusion shadow but observed by peer CAVs.
+          4. Performs geometric ray-casting for all civilian traffic and CAVs.
+          5. Resolves revealing partner CAV and minimum distance.
+      * _render_collaborative_scene(...):
+          Dynamically creates 3D visual geometry using Panda3D LineSegs:
+            - Electric Cyan Ring: Highlights currently tracked ego vehicle.
+            - Radiant Fluorescent Green Rings: Rendered at the 3D ground coordinates of occluded targets.
+            - Translucent Green Dashed Links: Drawn between the revealing partner CAV and the hidden target.
+* Traditional CS Concepts:
+  - Computational Geometry: Ray-casting, vector orthogonal projection, point-to-segment distance.
+  - Sensor Fusion: Decentralized Cooperative Perception Message (CPM) unmasking logic.
+  - Computer Graphics Pipeline: Direct scene graph manipulation via Panda3D LineSegs geometry nodes.
+  - Complexity: O(M * P) vector checks, optimized with spatial distance pruning (d <= 60m) and hash set
+    coordinate deduplication (processed_target_keys).
+
+----------------------------------------------------------------------------------------------------
+2.7 cav_demo/idm_fleet_policy.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Ritu Franklin
+* File Type   : Autonomous Driving Policy with V2V Cooperative Defense
+* Purpose     : Manages autonomous car-following and lane-keeping policies for fleet vehicles using
+                the non-linear Intelligent Driver Model (IDM), enhanced with V2V hazard deceleration.
+* Key Classes & Logic:
+  - IDMFleetController:
+      * _get_or_create_policy(agent_id, vehicle):
+          Lazily instantiates and caches MetaDrive's IDMPolicy(vehicle, seed=42).
+      * get_actions(agents_dict, v2v_mesh, manual_agents):
+          Computes baseline [steering, throttle] from IDM car-following equations:
+            dv/dt = a * [ 1 - (v/v0)^delta - (s*(v, dv) / s)^2 ]
+          Cooperative Braking Finite State Machine (FSM):
+            If cooperative braking enabled and emergency warning received for a hazard ahead:
+              - Proportional Deceleration:
+                  dist < 12m  -> throttle = min(throttle, -0.50) (Hard Emergency Deceleration)
+                  dist < 25m  -> throttle = min(throttle, -0.15) (Defensive Coasting)
+                  dist >= 25m -> throttle = min(throttle, +0.05) (Gentle Speed Matching)
+              - Deadlock / Livelock Prevention via Hysteresis:
+                  Cooperative braking limited to 15 consecutive steps (~0.75s).
+                  Exceeding limit triggers an automatic 12-step cooldown counter (coop_cooldown=12)
+                  to prevent permanent fleet freezing and ensure forward progress.
+              - Action Clamping: Clamps steer and throttle to [-1.0, 1.0].
+      * is_coop_braking(agent_id): Returns boolean status for telemetry HUD indicator.
+* Traditional CS & Control Theory Concepts:
+  - Non-linear Differential Equations: Numerical approximation of IDM continuous-time ODEs.
+  - Control Theory: Proportional deceleration overrides based on spatial separation.
+  - Finite State Machine with Hysteresis: Prevents high-frequency control chatter and circular deadlocks.
+
+----------------------------------------------------------------------------------------------------
+2.8 cav_demo/human_mode.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Neha Benny & Mark Joseph Kuttikat
+* File Type   : Mixed-Autonomy Orchestration Controller
+* Purpose     : Enables interactive human driving for Agent_0 via keyboard inputs while the autonomous
+                fleet vehicles coordinate and defensively react in the same traffic flow.
+* Key Classes & Logic:
+  - HumanInTheLoopManager:
+      * get_fleet_actions(env, agents_dict, v2v_mesh):
+          Dynamically identifies the human agent ("agent0" / "agent_0").
+          Supplies neutral passthrough actions [0.0, 0.0] for the human agent, allowing MetaDrive's
+          internal ManualControlPolicy to read raw W/A/S/D keyboard keystrokes.
+          Computes autonomous IDM actions for all remaining peer CAVs (Agent_1..N).
+          Seamlessly routes V2V wireless warning broadcasts from the human vehicle to the autonomous fleet.
+* Traditional CS Concepts:
+  - Mixed-Autonomy Control Arbitration: Partitioning agent control between human user-space events
+    and autonomous software policies.
+  - Event Handling: Interception and non-blocking forwarding of keyboard hardware scan-codes.
+
+----------------------------------------------------------------------------------------------------
+2.9 cav_demo/camera_controller.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat
+* File Type   : 3D Camera Switching & Viewport Management
+* Purpose     : Manages interactive 3D chase camera tracking and switches seamlessly between 3D Real View
+                and Top-Down Bird's-Eye-View (BEV) Perception Mode.
+* Key Classes & Logic:
+  - CameraController:
+      * setup_panda3d_listeners(env):
+          Binds keyboard events into Panda3D's event manager:
+            - Left/Right arrows & bracket keys '[' / ']' -> previous_agent / next_agent
+            - 'P' / 'V' keys -> toggle_view_mode (Chase <--> BEV)
+          Unbinds conflicting default MetaDrive keybinds (such as 'p' for pausing simulation).
+      * toggle_view_mode(env):
+          Toggles camera between 3D Chase follow and Top-Down 75m overhead orthogonal view.
+      * update_frame(env):
+          Direct hardware polling via Panda3D mouseWatcherNode for responsive view toggling.
+          When in BEV mode, positions camera directly above focused vehicle: setPos(x, y, 75.0), lookAt(x, y, 0).
+      * _cycle_agent(env, direction):
+          Debounced agent cycling across active CAVs using sorted list traversal with wrap-around modulo.
+* Traditional CS Concepts:
+  - Event-Driven Architecture: Asynchronous callback registration via direct.showbase.DirectObject.
+  - Polling vs Event-driven Hybrid: Combines Panda3D accept() callbacks with per-frame hardware polling.
+  - Temporal Debouncing: Eliminates input oscillation using monotonic timestamps.
+
+----------------------------------------------------------------------------------------------------
+2.10 cav_demo/telemetry_overlay.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Neha Benny & Sanjana M Paul
+* File Type   : Live Panda3D Heads-Up Display (HUD) Telemetry Sidebar
+* Purpose     : Renders a real-time on-screen telemetry dashboard and 360° LiDAR radar panel on the 
+                right side of the 3D window using direct Panda3D OnscreenText nodes.
+* Key Classes & Panels:
+  - TelemetryHUD:
+      * _extract_lidar(env, agent_id):
+          Extracts raw 72-point LiDAR cloud points, computes absolute metric distances (pts * 50.0m),
+          and maps laser indices to 6 directional sectors:
+            - FRONT   : indices 0..3 and 68..71 (forward arc)
+            - F-LEFT  : indices 58..67
+            - F-RIGHT : indices 4..14
+            - LEFT    : indices 51..57
+            - RIGHT   : indices 15..21
+            - REAR    : indices 32..40
+          Computes min distance per sector and classifies clearance: CLEAR (>25m), WARN (12-25m), ALERT (<12m).
+      * _format_bar(dist, max_range=50.0, width=8):
+          Renders text-based ASCII clearance progress bars: [========] 48.2m CLEAR.
+      * _generate_hud_strings(...):
+          Formats multi-panel telemetry:
+            1. CAV FLEET TELEMETRY: Focused vehicle, Speed, Lane index, Heading deg, Steer, V2V links, Latency, Loss %.
+            2. 360° LIDAR PERCEPTION SENSOR: Active laser count, sector clearance bars.
+            3. V2V COLLABORATIVE PERCEPTION: BLOS status, occluded target count, revealing partner CAV.
+            4. ACTIVE CAV FLEET STATUS: Fleet-wide roster with speeds, tracking focus, and *BRK* indicators.
+            5. BOTTOM BANNER: Interactive instructions and real-time emergency hazard alerts.
+* Traditional CS Concepts:
+  - High-performance GUI Rendering: Direct rendering via Panda3D's scene graph text nodes without HTML/CSS overhead.
+  - Data Aggregation & Binning: Slicing continuous circular range arrays into discrete categorical sectors.
+  - Throttled UI Updates: Update loop throttled to 20 Hz (update_interval_s=0.05s) to preserve 3D render FPS.
+
+----------------------------------------------------------------------------------------------------
+2.11 cav_demo/minimap_renderer.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat & Neha Benny
+* File Type   : Picture-in-Picture (PiP) Top-Down 2D Minimap
+* Purpose     : Renders a live 2D top-down track minimap into the bottom-left corner of the Panda3D viewport.
+* Key Classes & Logic:
+  - MinimapRenderer:
+      * init_overlay(env):
+          Allocates a dynamic Panda3D 2D RGB Texture (260x260 pixels) and pins it to the bottom-left
+          screen coordinates of Panda3D aspect2d via OnscreenImage.
+      * update(env, focused_agent_id):
+          Throttled to update every 3rd simulation frame to minimize GPU overhead.
+          Calls MetaDrive topdown renderer: env.render(mode="topdown", window=False).
+          Converts the returned NumPy RGB array into raw bytes and updates the texture memory
+          in-place using Texture.setRamImage(rgb_data).
+* Traditional CS Concepts:
+  - Direct Framebuffer / Texture RAM Blitting: Modifying GPU texture memory from CPU NumPy arrays.
+  - Frame Throttling: Reducing secondary camera render rate to maximize primary simulation FPS.
+
+----------------------------------------------------------------------------------------------------
+2.12 cav_demo/logger.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Neha Benny
+* File Type   : High-Throughput Telemetry Data Logger
+* Purpose     : Streams step-by-step vehicle kinematic states and V2V network metrics into timestamped
+                CSV files for quantitative analysis, ablation studies, and evaluation plotting.
+* Key Classes & Logic:
+  - TelemetryLogger:
+      * __init__(log_dir="logs", enabled=True):
+          Generates a unique timestamped file: logs/cav_telemetry_YYYYMMDD_HHMMSS.csv.
+          Opens file with buffering=1 (line buffered) to ensure continuous disk flushing without loss.
+      * log_step(step, agents_dict, v2v_mesh, actions_dict, coop_status_dict):
+          Appends a structured row for every active vehicle at the current simulation step:
+          Columns: step, timestamp_epoch, agent_id, pos_x, pos_y, speed_kmh, heading_deg,
+                   steering, throttle, is_braking, coop_braking_active, v2v_active_links, v2v_avg_latency_ms.
+      * close(): Flushes remaining buffers and closes the open file descriptor cleanly upon exit.
+* Traditional CS Concepts:
+  - Time-series Logging: Structured relational tabular output for offline scientific computing.
+  - I/O Buffer Management: Line-buffered streaming to prevent data loss in the event of an abrupt simulation kill.
+
+----------------------------------------------------------------------------------------------------
+2.13 cav_demo/plot_telemetry.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Neha Benny
+* File Type   : Data Analysis & Visualization Script
+* Purpose     : Reads recorded CSV logs and uses Pandas and Matplotlib to generate publication-grade
+                evaluation plots for project reports and viva presentations.
+* Key Features:
+  - plot_latest_log(log_dir, output_fig):
+      Identifies the most recent CSV file in logs/.
+      Plots two synchronized subplots sharing the horizontal simulation step axis:
+        Subplot 1: Vehicle speed profiles (km/h) for all active CAVs over time, with red scatter markers
+                   highlighting exact moments when cooperative V2V defensive braking was triggered.
+        Subplot 2: Simulated V2V communication latency over time, plotted against the 12ms baseline.
+      Exports high-resolution 300 DPI image: cav_evaluation_plot.png.
+* Traditional CS Concepts:
+  - Data Wrangling: Grouping and slicing multi-agent relational time-series data using Pandas.
+  - Data Visualization: Scientific figure plotting with Matplotlib.
+
+----------------------------------------------------------------------------------------------------
+2.14 cav_demo/main.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat (Master Integrator)
+* File Type   : Unified CLI Application Entry Point
+* Purpose     : Central orchestrator that parses command-line arguments, instantiates all subsystems,
+                and executes the primary discrete-event simulation and rendering loop.
+* Execution Flow:
+  1. parse_args(): Parses flags (--mode, --view, --agents, --scenario, --map, --traffic,
+                   --headless, --show-lidar, --disable-coop, --log, --max-steps).
+  2. Subsystem Instantiation: Creates SimulationConfig, V2VConfig, CameraConfig, HUDConfig,
+     MultiAgentMetaDrive environment, V2VNetworkMesh, CameraController, TelemetryHUD,
+     MinimapRenderer, CollaborativePerceptionEngine, IDMFleetController, HumanInTheLoopManager,
+     and TelemetryLogger.
+  3. Reset & Setup: Resets environment, establishes V2V mesh, and registers Panda3D keyboard listeners.
+  4. Main Synchronous Step Loop:
+     Step A: Retrieve active agents.
+     Step B: Generate control actions (via IDMFleetController or HumanInTheLoopManager).
+     Step C: Advance simulation physics via env.step(actions).
+     Step D: Execute V2V wireless mesh broadcast round (v2v_mesh.broadcast_step).
+     Step E: Update camera position and update collaborative perception unmasking if in BEV mode.
+     Step F: Refresh on-screen Telemetry HUD and PiP minimap.
+     Step G: Stream metrics to CSV logger (if --log enabled).
+     Step H: Render Panda3D frame and check termination criteria.
+  5. Shutdown & Cleanup: Destroys HUD text, flushes logs, closes environment cleanly.
+* Traditional CS Concepts:
+  - Master Discrete-Event Loop: Tightly coordinated, deterministic sequence of physics -> networking -> perception -> rendering.
+  - Fault Tolerance & Graceful Degradation: Handles SIGINT (Ctrl+C) and window close events with clean resource reclamation.
+
+----------------------------------------------------------------------------------------------------
+2.15 cav_demo/requirements.txt
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Mark Joseph Kuttikat
+* File Type   : Dependency Manifest
+* Purpose     : Lists pinned external Python libraries required to run the project.
+* Key Dependencies:
+  - metadrive-simulator==0.4.2.3: Procedural 3D driving simulator built on Panda3D and Bullet Physics.
+  - panda3d==1.10.14: 3D graphics rendering engine and scenegraph.
+  - numpy>=1.24.0: Vectorized array operations and tensor manipulation.
+  - pandas>=2.0.0: Relational data manipulation and CSV processing.
+  - matplotlib>=3.7.0: Figure plotting for evaluation graphs.
+  - pytest>=7.4.0: Unit test execution framework.
+
+====================================================================================================
+3. AUTOMATED VERIFICATION & UNIT TESTS (tests/)
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+3.1 tests/test_v2v_network.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Sanjana M Paul
+* File Type   : Pytest Automated Unit Test Suite
+* Purpose     : Provides isolated unit testing for the V2V networking and packet extraction layer
+                without requiring the 3D graphics engine.
+* Test Cases:
+  - MockVehicle: Lightweight mock object simulating vehicle position, speed, heading, and lane index.
+  - test_agent_name_formatting: Validates that format_agent_name correctly formats agent keys.
+  - test_speed_conversion: Validates mps_to_kmh arithmetic accuracy against known constants.
+  - test_v2v_packet_extraction: Verifies that extract_kinematics extracts an 11D array with exact values.
+  - test_v2v_brake_warning_trigger: Confirms that throttle < -0.35 sets is_braking=True.
+  - test_v2v_mesh_broadcast_range:
+      Sets up 3 vehicles: A at (0,0), B at (30,0), and C at (90,0) with an 80m communication radius.
+      Verifies that A receives packets from B (distance 30m < 80m), but A DOES NOT receive packets
+      from C (distance 90m > 80m), mathematically confirming spatial ad-hoc routing.
+* Traditional CS Concepts:
+  - Mock Object Pattern: Decoupling unit tests from external C++ Bullet Physics dependencies.
+  - Boundary Value Analysis: Verifying behavior at the 80m communication radius threshold.
+
+----------------------------------------------------------------------------------------------------
+3.2 tests/test_collaborative_perception.py
+----------------------------------------------------------------------------------------------------
+* Primary Lead: Sanjana M Paul & Ritu Franklin
+* File Type   : Pytest Automated Unit Test Suite
+* Purpose     : Validates collaborative beyond-line-of-sight perception and camera view switching.
+* Test Cases:
+  - test_collaborative_perception_occlusion_detection:
+      Constructs a synthetic scenario with an ego vehicle, a neighbor CAV, a shared target,
+      and an occluded target visible ONLY to the neighbor.
+      Executes CollaborativePerceptionEngine.update() and asserts:
+        * summary["active"] == True
+        * summary["resolved_count"] == 1
+        * summary["revealing_partner"] == "CAV_02"
+        * summary["closest_dist"] == 15.0m
+  - test_camera_controller_bev_toggle:
+      Verifies that CameraController.toggle_view_mode successfully flips state between 'chase' and 'bev'.
+* Traditional CS Concepts:
+  - Deterministic Verification of Computational Geometry algorithms.
+  - Regression Testing for state-toggle logic.
+
+====================================================================================================
+4. CROSS-REFERENCE: TEAM MEMBER TO CODEBASE MATRIX
+====================================================================================================
+
++----------------------------+-----------------------------------+----------------------------------+
+| Team Member                | Primary Modules Owned             | Core CS / Mathematical Focus     |
++----------------------------+-----------------------------------+----------------------------------+
+| Mark Joseph Kuttikat       | cav_demo/main.py                  | Discrete-event simulation loop,  |
+| (Team Lead & PI)           | cav_demo/env_setup.py             | synchronous tick orchestration,  |
+|                            | cav_demo/config.py                | engine runtime monkey-patching,  |
+|                            | cav_demo/camera_controller.py     | temporal debounce algorithms,    |
+|                            | cav_demo/minimap_renderer.py      | POSIX shell process management.  |
+|                            | run_demo.sh                       |                                  |
++----------------------------+-----------------------------------+----------------------------------+
+| Neha Benny                 | cav_demo/human_mode.py            | 11D kinematic state space,       |
+| (Co-Investigator)          | cav_demo/telemetry_overlay.py     | LiDAR circular sector binning,   |
+|                            | cav_demo/logger.py                | time-series streaming I/O,       |
+|                            | cav_demo/plot_telemetry.py        | mixed-autonomy control           |
+|                            | cav_demo/utils.py                 | arbitration, data wrangling.     |
++----------------------------+-----------------------------------+----------------------------------+
+| Ritu Franklin              | cav_demo/idm_fleet_policy.py      | Non-linear IDM car-following     |
+| (Co-Investigator)          | cav_demo/env_setup.py (scenarios) | differential equations,          |
+|                            | cav_demo/config.py (scenarios)    | cooperative braking FSM,         |
+|                            | tests/test_collaborative_perc.py  | anti-deadlock cooldown machine,  |
+|                            |                                   | procedural road network graphs.  |
++----------------------------+-----------------------------------+----------------------------------+
+| Sanjana M Paul             | cav_demo/v2v_network.py           | Ad-hoc geometric random graph,   |
+| (Co-Investigator)          | cav_demo/collaborative_perception | Gaussian channel latency jitter, |
+|                            | tests/test_v2v_network.py         | Bernoulli packet drop trials,    |
+|                            | tests/test_collaborative_perc.py  | ray-to-point orthogonal project, |
+|                            |                                   | ETSI CPM BLOS sensor fusion.     |
++----------------------------+-----------------------------------+----------------------------------+
+
+====================================================================================================
+END OF CODEBASE SUMMARY
+====================================================================================================
