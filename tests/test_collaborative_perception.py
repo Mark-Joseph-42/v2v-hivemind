@@ -86,3 +86,16 @@ def test_camera_controller_bev_toggle():
 
     cam.toggle_view_mode(mock_env, force=True)
     assert cam.view_mode == "chase"
+
+
+def test_camera_controller_pause_toggle():
+    cam = CameraController(CameraConfig())
+    assert cam.is_paused is False
+
+    mock_env = MagicMock()
+    cam.toggle_pause(mock_env, force=True)
+    assert cam.is_paused is True
+
+    cam.toggle_pause(mock_env, force=True)
+    assert cam.is_paused is False
+

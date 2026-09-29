@@ -108,6 +108,8 @@ Runs a 100-step automated verification loop:
 |---|---|---|
 | **`◄` / `►` (Arrow Keys)** | Cycle 3D chase camera target across active CAVs | All Modes |
 | **`[` / `]`** | Alternative camera cycle previous / next | All Modes |
+| **`Space`** | **Pause / Resume Simulation** (Freezes physics while allowing camera cycling & view toggle) | All Modes |
+| **`P` / `V`** | Toggle between 3D Chase Camera and Overhead BEV Perception Mode | All Modes |
 | **`W`** | Accelerate forward | Human Mode (CAV_01) |
 | **`S`** | Brake / Reverse (triggers V2V `BRAKE_WARN`) | Human Mode (CAV_01) |
 | **`A` / `D`** | Steer left / right | Human Mode (CAV_01) |

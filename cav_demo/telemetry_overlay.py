@@ -84,7 +84,8 @@ class TelemetryHUD:
         mode: str = "fleet",
         is_coop_braking: bool = False,
         collab_summary: Optional[Dict[str, Any]] = None,
-        view_mode: str = "chase"
+        view_mode: str = "chase",
+        is_paused: bool = False
     ):
         """
         Update the on-screen telemetry feed with the latest vehicle states, LiDAR rays, and V2V packets.
@@ -105,7 +106,8 @@ class TelemetryHUD:
             mode=mode,
             is_coop_braking=is_coop_braking,
             collab_summary=collab_summary,
-            view_mode=view_mode
+            view_mode=view_mode,
+            is_paused=is_paused
         )
 
         if self._onscreen_text is not None:
@@ -210,7 +212,8 @@ class TelemetryHUD:
         mode: str,
         is_coop_braking: bool,
         collab_summary: Optional[Dict[str, Any]] = None,
-        view_mode: str = "chase"
+        view_mode: str = "chase",
+        is_paused: bool = False
     ) -> Tuple[str, str, tuple]:
         """Construct formatted multi-panel telemetry and LiDAR text."""
         focused_name = format_agent_name(focused_agent_id)
@@ -255,9 +258,11 @@ class TelemetryHUD:
         # 1. BOTTOM-RIGHT: CAV FLEET & VEHICLE TELEMETRY
         # -------------------------------------------------------------
         view_tag = "BEV" if view_mode == "bev" else "3D"
+        status_tag = "⏸ PAUSED" if is_paused else "RUNNING"
         lines = [
             "+-- CAV FLEET TELEMETRY ------------+",
-            f"| Focused  : {focused_name} ({mode.upper()}) [{view_tag}]",
+            f"| Status   : {status_tag:<10s} [{view_tag} View]",
+            f"| Focused  : {focused_name} ({mode.upper()})",
             f"| Speed    : {speed_kmh:5.1f} km/h | Lane: {lane}",
             f"| Heading  : {heading_deg:5.1f} deg | Steer: {steer:+4.2f}",
             f"| V2V Mesh : {links} links | Lat: {avg_lat:4.1f}ms ({drop_pct:.1f}%)",
@@ -320,7 +325,11 @@ class TelemetryHUD:
         lines.append("+-----------------------------------+")
 
         # Bottom banner logic
-        if is_coop_braking or warnings:
+        if is_paused:
+            view_label = "3D View" if view_mode == "bev" else "BEV View"
+            banner_text = f"⏸ SIMULATION PAUSED | [Space] Resume | [◄ / ►] Cycle CAV | [P / V] Switch to {view_label} | Tracking: {focused_name}"
+            banner_fg = (1.0, 0.85, 0.1, 1.0)
+        elif is_coop_braking or warnings:
             banner_text = f"[!] V2V COLLISION AVOIDANCE ACTIVE: Emergency brake signal received! [Tracking: {focused_name}]"
             banner_fg = (1.0, 0.2, 0.2, 1.0)
         elif collab_summary and collab_summary.get("active", False):
@@ -329,7 +338,7 @@ class TelemetryHUD:
             banner_fg = (0.2, 1.0, 0.3, 1.0)
         else:
             view_label = "3D View" if view_mode == "bev" else "BEV View"
-            banner_text = f"[<- / ->] Cycle CAV | [P / V] Switch to {view_label} | Tracking: {focused_name} | Mode: {mode.upper()}"
+            banner_text = f"[◄ / ►] Cycle CAV | [Space] Pause | [P / V] Switch to {view_label} | Tracking: {focused_name} | Mode: {mode.upper()}"
             banner_fg = (0.2, 1.0, 0.4, 1.0)
 
         return "\n".join(lines), banner_text, banner_fg

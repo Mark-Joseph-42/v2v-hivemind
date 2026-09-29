@@ -25,8 +25,10 @@ class CameraController:
         self.config = config or CameraConfig()
         self.current_agent_id: Optional[str] = None
         self.view_mode: str = initial_view or getattr(self.config, "initial_view", "chase")
+        self.is_paused: bool = False
         self.last_switch_time: float = 0.0
         self.last_toggle_time: float = 0.0
+        self.last_pause_time: float = 0.0
         self._registered_keys: bool = False
 
     def setup_panda3d_listeners(self, env: Any):
@@ -51,6 +53,10 @@ class CameraController:
                 engine.accept("[", self.previous_agent, [env])
                 engine.accept("]", self.next_agent, [env])
 
+                # [Space] and [Pause] keys toggle simulation pause/resume
+                engine.accept("space", self.toggle_pause, [env])
+                engine.accept("pause", self.toggle_pause, [env])
+
                 # [P] and [V] keys toggle between 3D Chase view and Top-Down BEV Perception
                 engine.accept("p", self.toggle_view_mode, [env])
                 engine.accept("P", self.toggle_view_mode, [env])
@@ -59,6 +65,22 @@ class CameraController:
                 self._registered_keys = True
             except Exception:
                 pass
+
+    def toggle_pause(self, env: Any = None, force: bool = False) -> bool:
+        """Toggle simulation pause state with debounce protection."""
+        now = time.time()
+        if not force and (now - self.last_pause_time < 0.30):
+            return self.is_paused
+        self.last_pause_time = now
+        self.is_paused = not self.is_paused
+
+        # Ensure MetaDrive in_stop flag doesn't interfere
+        if env is not None and hasattr(env, "in_stop"):
+            env.in_stop = False
+
+        status = "PAUSED ⏸" if self.is_paused else "RESUMED ▶"
+        print(f"\n[Simulation {status}] Press [Space] to {'resume' if self.is_paused else 'pause'}.")
+        return self.is_paused
 
     def toggle_view_mode(self, env: Any, force: bool = False):
         """Toggle between 3D Chase Camera and Top-Down Bird's-Eye-View (BEV)."""
@@ -84,11 +106,23 @@ class CameraController:
         if getattr(env, "in_stop", False):
             env.in_stop = False
 
-        # Direct hardware polling for P or V key press via Panda3D mouseWatcherNode
+        # Direct hardware polling for Space, P/V, and arrow keys via Panda3D mouseWatcherNode
         mwn = getattr(engine, "mouseWatcherNode", None)
         if mwn is not None:
             try:
                 from panda3d.core import KeyboardButton
+
+                # Spacebar or Pause key polling for Pause/Resume
+                is_space_down = (
+                    mwn.is_button_down(KeyboardButton.space()) or
+                    mwn.is_button_down(KeyboardButton.pause())
+                )
+                if is_space_down:
+                    now = time.time()
+                    if now - self.last_pause_time > 0.35:
+                        self.toggle_pause(env)
+
+                # P or V key polling for View Mode toggle
                 is_p_down = (
                     mwn.is_button_down(KeyboardButton.ascii_key(b"p")) or
                     mwn.is_button_down(KeyboardButton.ascii_key(b"P")) or
@@ -99,6 +133,12 @@ class CameraController:
                     now = time.time()
                     if now - self.last_toggle_time > 0.40:
                         self.toggle_view_mode(env)
+
+                # Left / Right arrow keys polling for vehicle cycling (works even when paused)
+                if mwn.is_button_down(KeyboardButton.left()):
+                    self.previous_agent(env)
+                elif mwn.is_button_down(KeyboardButton.right()):
+                    self.next_agent(env)
             except Exception:
                 pass
 

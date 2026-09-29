@@ -176,20 +176,64 @@ def main():
         initial_focus = cam_ctrl.get_focused_agent_id(env)
 
         print(f"{Colors.GREEN}[Ready]{Colors.ENDC} Live demo running! Press Left/Right arrow keys to cycle camera.")
-        print(f"{Colors.CYAN}[Controls]{Colors.ENDC} Press [P] or [V] to toggle 3D Chase Cam <--> Overhead BEV Perception View.")
+        print(f"{Colors.CYAN}[Controls]{Colors.ENDC} Press [Space] to Pause/Resume | [P]/[V] to toggle 3D Chase Cam <--> Overhead BEV View.")
         if args.mode == "human":
             print(f"{Colors.YELLOW}[Interactive]{Colors.ENDC} Use W/A/S/D to drive CAV_01. Slam 'S' to broadcast emergency brake!")
 
         step = 0
         running = True
         actions_last = {}
+        collab_summary = {}
+        is_coop = False
 
         while running:
-            step += 1
+            # Check user input and update camera controller (including pause and view mode)
+            cam_ctrl.update_frame(env)
 
             # Safeguard against MetaDrive built-in pause toggle
             if getattr(env, "in_stop", False):
                 env.in_stop = False
+
+            # If simulation is paused, maintain rendering, HUD, and camera interaction without advancing physics
+            if cam_ctrl.is_paused:
+                focused_id = cam_ctrl.get_focused_agent_id(env)
+
+                # Keep Panda3D rendering & event processing alive
+                engine = getattr(env, "engine", None)
+                if engine is not None and hasattr(engine, "taskMgr"):
+                    try:
+                        engine.taskMgr.step()
+                    except Exception:
+                        pass
+
+                # Update collaborative perception visualization if in perception / BEV mode
+                if cam_ctrl.view_mode == "bev" or args.mode == "perception":
+                    collab_summary = collab_engine.update(env, focused_id, v2v_mesh)
+                else:
+                    collab_engine.clear_visualization()
+                    collab_summary = collab_engine.get_summary()
+
+                # Refresh HUD with PAUSED indicator
+                telemetry_hud.update(
+                    env=env,
+                    focused_agent_id=focused_id,
+                    v2v_mesh=v2v_mesh,
+                    actions_dict=actions_last,
+                    mode=args.mode,
+                    is_coop_braking=is_coop,
+                    collab_summary=collab_summary,
+                    view_mode=cam_ctrl.view_mode,
+                    is_paused=True
+                )
+
+                # Keep PiP minimap updated
+                minimap.update(env, focused_id)
+
+                # Small sleep to keep CPU usage low while idle
+                time.sleep(0.025)
+                continue
+
+            step += 1
 
             # A. Retrieve active agents
             agents = get_active_agents_dict(env)
@@ -243,7 +287,8 @@ def main():
                 mode=args.mode,
                 is_coop_braking=is_coop,
                 collab_summary=collab_summary,
-                view_mode=cam_ctrl.view_mode
+                view_mode=cam_ctrl.view_mode,
+                is_paused=False
             )
 
             # F. Minimap PiP Update
